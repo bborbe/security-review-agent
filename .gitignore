@@ -1,0 +1,15 @@
+/.update-logs/
+/.claude/
+/.dark-factory.daemon.out
+/.dark-factory.lock
+/.dark-factory.log
+/.mcp-*
+/cover.out
+/pr-reviewer
+/prompts/log
+/prompts/in-progress/*.lock
+/run-task
+/specs/log
+/specs/in-progress/*.lock
+/vendor/
+/github-pr-review-agent

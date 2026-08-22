@@ -1,0 +1,14 @@
+# maintainer-bot per-repo config — controls how the bot (ben-s-pull-request-reviewer[bot])
+# behaves on this repo's PRs and releases.
+#
+# Schema (all fields default false when the file or field is absent):
+#   release:
+#     autoRelease: true   # github-release watcher gate
+#   prReviewer:
+#     autoApprove: true   # pr-reviewer agent gate
+release:
+  autoRelease: true
+prReviewer:
+  autoApprove: true
+goUpdate:
+  autoUpdate: true
