@@ -43,6 +43,19 @@ var _ = Describe("HasUnverifiedConcerns", func() {
 			),
 			true,
 		),
+		// Benign "not verified" concern that self-describes as not-applicable
+		// (config/docs-only diff, no code to verify) must NOT fail-close — the
+		// model is explaining WHY verification was unnecessary, not that it ran
+		// out of time budget. Regression 2026-08-23 (bborbe/math#18): the bare
+		// "not verified" substring matched this and demoted approve → false
+		// CHANGES_REQUESTED.
+		Entry(
+			"benign not-applicable concern does not fail-close",
+			fence(
+				`{"verdict":"approve","concerns_addressed":["security: not verified (code logic not applicable — this is a config/changelog-only diff with no Go code changes)"]}`,
+			),
+			false,
+		),
 		// No flagged concern → the gate must not over-trigger.
 		Entry(
 			"no flags",
