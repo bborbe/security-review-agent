@@ -261,6 +261,20 @@ const ReasonConcernsNotVerified = "one or more ## Plan concerns not verified"
 // "not verified" in the execution output format's concerns_addressed list.
 var unverifiedConcernPattern = regexp.MustCompile(`(?i)not verified|unverified`)
 
+// benignUnverifiedPattern matches a "not verified" concern that self-describes
+// as not-applicable — the model is explaining WHY verification was unnecessary
+// (config/docs-only change, no code to verify), NOT that it ran out of time
+// budget on a MUST-tier item. Narrowing gate: such concerns must NOT fail-close
+// an approve. Regression 2026-08-23 (bborbe/math#18): the bare "not verified"
+// substring matched "not verified (code logic not applicable — this is a
+// config/changelog-only diff with no Go code changes)" and demoted a clean
+// approve → false CHANGES_REQUESTED (admin-merged). Only genuinely unexamined
+// concerns (no benign explanation) still fail-close, preserving the weak-model
+// MUST-tier protection (SC5).
+var benignUnverifiedPattern = regexp.MustCompile(
+	`(?i)not applicable|config[- ]only|(docs?|documentation)[- ]only|no (go |code |source )*changes|nothing to (verify|check)`,
+)
+
 // HasUnverifiedConcerns reports whether the review body's verdict JSON flags
 // any ## Plan concern as "not verified" — i.e. the model stopped investigating
 // at the time budget before examining it. An approve that flags any concern
@@ -278,7 +292,8 @@ func HasUnverifiedConcerns(reviewText string) bool {
 		return false
 	}
 	for _, concern := range payload.ConcernsAddressed {
-		if unverifiedConcernPattern.MatchString(concern) {
+		if unverifiedConcernPattern.MatchString(concern) &&
+			!benignUnverifiedPattern.MatchString(concern) {
 			return true
 		}
 	}
