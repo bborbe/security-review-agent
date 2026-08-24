@@ -56,6 +56,32 @@ var _ = Describe("HasUnverifiedConcerns", func() {
 			),
 			false,
 		),
+		// REGRESSION 2026-08-24 (bborbe/nuke#68): a benign "not verified" concern
+		// that explains the verification gap as contextual (source not in this
+		// repo → could not be cross-checked) escaped the benignUnverifiedPattern
+		// whitelist and demoted a clean approve → false CHANGES_REQUESTED on
+		// github-pr-review-agent v0.6.2 (re-review 5 min later posted APPROVED;
+		// metric confirmed correct). The gate must key on the concern's own
+		// blocker tiering, not a fixed phrase list — non-blocking explained gaps
+		// pass.
+		Entry(
+			"benign not verified (source not in repo — could not be cross-checked)",
+			fence(
+				`{"verdict":"approve","concerns_addressed":["correctness: metric name agent_controller_results_written_total{result=\"not_found\"} — searched entire repo (go.mod, all source, all alerts) and the metric only appears in this new alert and the CHANGELOG. The agent-task-controller source is not in this repository, so the metric name and label value could not be cross-checked against the actual controller code. Not verified."]}`,
+			),
+			false,
+		),
+		// POSITIVE CONTROL 2026-08-24 (bborbe/nuke#73): a "not verified" concern
+		// that IS a MUST-tier blocker (metric existence unconfirmed; without it
+		// the alerts will never fire; must verify before deploying) must still
+		// fail-close — the tier-keyed gate preserves true request-changes.
+		Entry(
+			"MUST-tier unverified blocker (alerts will never fire)",
+			fence(
+				`{"verdict":"approve","concerns_addressed":["correctness: expression references github_build_watcher_rate_limit_remaining — not verified: build-watcher source not present in this monorepo, metric existence cannot be confirmed; without it the alerts will never fire. Must verify metric is exported before deploying."]}`,
+			),
+			true,
+		),
 		// No flagged concern → the gate must not over-trigger.
 		Entry(
 			"no flags",
