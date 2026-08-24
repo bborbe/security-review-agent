@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [003-security-review-agent-adaptation]
+summary: Locked the verdict contract with security-flow regression tests (verdict.go untouched) and wired cmd/run-task to the security task-type dispatch so the local CLI runs the identical no-posting security flow as the Kafka entry
+execution_id: security-review-agent-security-exec-014-spec-003-verdict-lock-and-cli-parity
+dark-factory-version: dev
 created: "2026-08-24T20:22:59Z"
 queued: "2026-08-24T20:44:38Z"
+started: "2026-08-24T21:07:34Z"
+completed: "2026-08-24T21:14:06Z"
 branch: dark-factory/security-review-agent-adaptation
 ---
 

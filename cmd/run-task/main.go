@@ -20,6 +20,7 @@ import (
 	"github.com/bborbe/errors"
 	prpkg "github.com/bborbe/security-review-agent/pkg"
 	"github.com/bborbe/security-review-agent/pkg/factory"
+	"github.com/bborbe/security-review-agent/pkg/git"
 	"github.com/bborbe/security-review-agent/pkg/githubauth"
 	libsentry "github.com/bborbe/sentry"
 	"github.com/bborbe/service"
@@ -141,6 +142,18 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		glog.V(2).Infof("security-reviewer skip-post enabled — GitHub writes suppressed")
 	}
 
+	agent, err := a.dispatchAgent(
+		ctx,
+		string(taskContent),
+		repoAllowlist,
+		resolvedToken,
+		reposPath,
+		workPath,
+	)
+	if err != nil {
+		return errors.Wrap(ctx, err, "task type dispatch")
+	}
+
 	authSetup := githubauth.NewNoopAuthSetup()
 	result, err := factory.RunAgent(ctx, factory.RunConfig{
 		ClaudeConfigDir:             a.ClaudeConfigDir,
@@ -162,6 +175,7 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		Phase:                       a.Phase,
 		TaskContent:                 string(taskContent),
 		Deliverer:                   deliverer,
+		Agent:                       agent,
 		BotLogin:                    a.BotLogin,
 		SkipPost:                    a.SkipPost,
 	})
@@ -169,6 +183,74 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		return errors.Wrap(ctx, err, "agent run failed")
 	}
 	return agentlib.PrintResult(ctx, result)
+}
+
+// dispatchAgent resolves the agent for the task file's task_type via the
+// security dispatch table. A missing task_type defaults to the security-review
+// route (this binary is the security agent). A refused task_type (pr-review /
+// pr-override) returns the provider's unknown-task-type error — a mis-routed
+// task is never run as a plain review and never posted.
+func (a *application) dispatchAgent(
+	ctx context.Context,
+	taskContent string,
+	repoAllowlist []string,
+	resolvedToken string,
+	reposPath string,
+	workPath string,
+) (*agentlib.Agent, error) {
+	md, err := agentlib.ParseMarkdown(ctx, taskContent)
+	if err != nil {
+		return nil, errors.Wrapf(ctx, err, "parse task content")
+	}
+	taskType := md.Frontmatter.TaskType()
+	if taskType == "" {
+		taskType = prpkg.TaskTypeSecurityReview
+	}
+	env := map[string]string{}
+	if resolvedToken != "" {
+		env["GH_TOKEN"] = resolvedToken
+	}
+	if a.AnthropicBaseURL != "" {
+		env["ANTHROPIC_BASE_URL"] = a.AnthropicBaseURL
+	}
+	if a.AnthropicAuthToken != "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = a.AnthropicAuthToken
+	}
+	if a.AnthropicModel != "" {
+		env["ANTHROPIC_MODEL"] = a.AnthropicModel.String()
+	}
+	if a.AnthropicDefaultOpusModel != "" {
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = a.AnthropicDefaultOpusModel
+	}
+	if a.AnthropicDefaultSonnetModel != "" {
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = a.AnthropicDefaultSonnetModel
+	}
+	if a.AnthropicDefaultHaikuModel != "" {
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = a.AnthropicDefaultHaikuModel
+	}
+	if a.AnthropicDefaultFableModel != "" {
+		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = a.AnthropicDefaultFableModel
+	}
+	if a.BotLogin != "" {
+		env["BOT_GITHUB_LOGIN"] = a.BotLogin
+	}
+	repoManager := git.NewRepoManager(
+		git.WorkdirConfig{ReposPath: reposPath, WorkPath: workPath},
+		resolvedToken,
+	)
+	provider := factory.CreateAgentProvider(
+		a.ClaudeConfigDir,
+		a.AgentDir,
+		a.AnthropicModel,
+		resolvedToken,
+		env,
+		repoManager,
+		a.ReviewMode,
+		repoAllowlist,
+		libtime.NewCurrentDateTime(),
+		a.MaxReviewDuration,
+	)
+	return provider.Get(ctx, taskType)
 }
 
 // resolveAuth mints a GitHub App installation token and returns it. The token

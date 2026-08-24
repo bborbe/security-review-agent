@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- feat: wire cmd/run-task to the security task-type dispatch so the local CLI runs the identical no-posting security flow as the Kafka entry
 - feat: thread the --security flag through the execution instructions and fail closed to human_review when the coding plugin lacks it
 - feat: adapt the pr-reviewer seed into the security-review agent — renamed module, agent identity, service name, and image to the security-review identity; docs updated to the security variant
 - feat: route security-review tasks to a no-posting security agent (nil poster + nil verifier) and drop the pr-review / pr-override routes
