@@ -29,7 +29,7 @@ var _ = Describe("BuildExecutionInstructions", func() {
 		fakePlugin string
 	)
 
-	fakePlugin = "---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nProcedure body line 1.\nProcedure body line 2.\n"
+	fakePlugin = "---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nSecurity review flag: --security.\nProcedure body line 1.\nProcedure body line 2.\n"
 
 	BeforeEach(func() {
 		ctx = context.Background()
@@ -199,7 +199,7 @@ var _ = Describe("BuildExecutionInstructions", func() {
 
 	Describe("no frontmatter", func() {
 		It("assembles body unchanged when no leading frontmatter", func() {
-			noFrontmatter := "# PR Review\n\nBody without frontmatter.\n"
+			noFrontmatter := "# PR Review\n\nBody without frontmatter. Security review flag: --security.\n"
 			writePlugin(noFrontmatter)
 
 			instructions, err := prompts.BuildExecutionInstructions(
@@ -216,6 +216,73 @@ var _ = Describe("BuildExecutionInstructions", func() {
 
 			workflow := instructions[0].Content
 			Expect(workflow).To(ContainSubstring("Body without frontmatter."))
+		})
+	})
+
+	Describe("security flag threading", func() {
+		It("threads --security through the pre-filled arguments block", func() {
+			writePlugin(fakePlugin)
+
+			instructions, err := prompts.BuildExecutionInstructions(
+				ctx,
+				claudelib.ClaudeConfigDir(tmpDir),
+				"standard",
+				"main",
+				true,
+				"{}",
+				"",
+				libtime.Duration(25*time.Minute),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			workflow := instructions[0].Content
+			// AC4: the flag is wired through the pre-filled arguments header, NOT
+			// merely echoed inside the injected plugin body.
+			Expect(workflow).To(ContainSubstring("--security"))
+			Expect(strings.Index(workflow, "## Pre-filled arguments")).
+				To(BeNumerically("<", strings.Index(workflow, "--security")))
+			Expect(strings.Index(workflow, "--security")).
+				To(BeNumerically("<", strings.Index(workflow, "Procedure body line 1.")))
+		})
+
+		It("fails closed when the plugin body lacks --security", func() {
+			writePlugin(
+				"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nProcedure body.\n",
+			)
+
+			_, err := prompts.BuildExecutionInstructions(
+				ctx,
+				claudelib.ClaudeConfigDir(tmpDir),
+				"standard",
+				"main",
+				true,
+				"{}",
+				"",
+				libtime.Duration(25*time.Minute),
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("--security"))
+		})
+
+		It("IsSecurityFlagMissing matches only the missing-flag error", func() {
+			writePlugin(
+				"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nProcedure body.\n",
+			)
+
+			_, missingErr := prompts.BuildExecutionInstructions(
+				ctx,
+				claudelib.ClaudeConfigDir(tmpDir),
+				"standard",
+				"main",
+				true,
+				"{}",
+				"",
+				libtime.Duration(25*time.Minute),
+			)
+			Expect(prompts.IsSecurityFlagMissing(missingErr)).To(BeTrue())
+			Expect(prompts.IsSecurityFlagMissing(nil)).To(BeFalse())
+			// Unrelated errors (read failure, empty base_ref) must NOT match.
+			Expect(prompts.IsSecurityFlagMissing(context.DeadlineExceeded)).To(BeFalse())
 		})
 	})
 

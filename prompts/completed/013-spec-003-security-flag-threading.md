@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [003-security-review-agent-adaptation]
+summary: Threaded the --security flag through the execution instructions' pre-filled arguments and added a fail-closed probe that routes to human_review (naming the missing flag) when the runtime-read /coding:pr-review command file lacks --security, with unit and routing tests plus a CHANGELOG entry
+execution_id: security-review-agent-security-exec-013-spec-003-security-flag-threading
+dark-factory-version: dev
 created: "2026-08-24T20:22:59Z"
 queued: "2026-08-24T20:44:38Z"
+started: "2026-08-24T21:01:56Z"
+completed: "2026-08-24T21:07:32Z"
 branch: dark-factory/security-review-agent-adaptation
 ---
 
