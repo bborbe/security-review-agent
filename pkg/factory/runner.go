@@ -104,53 +104,13 @@ func RunAgent(ctx context.Context, cfg RunConfig) (*agentlib.Result, error) {
 		return nil, deliverStartupFailure(ctx, cfg.Deliverer, err, "github auth setup failed")
 	}
 
-	env := map[string]string{}
-	if cfg.GHToken != "" {
-		env["GH_TOKEN"] = cfg.GHToken
-	}
-	if cfg.AnthropicBaseURL != "" {
-		env["ANTHROPIC_BASE_URL"] = cfg.AnthropicBaseURL
-	}
-	if cfg.AnthropicAuthToken != "" {
-		env["ANTHROPIC_AUTH_TOKEN"] = cfg.AnthropicAuthToken
-	}
-	if cfg.Model != "" {
-		env["ANTHROPIC_MODEL"] = cfg.Model.String()
-	}
-	if cfg.AnthropicDefaultOpusModel != "" {
-		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = cfg.AnthropicDefaultOpusModel
-	}
-	if cfg.AnthropicDefaultSonnetModel != "" {
-		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = cfg.AnthropicDefaultSonnetModel
-	}
-	if cfg.AnthropicDefaultHaikuModel != "" {
-		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = cfg.AnthropicDefaultHaikuModel
-	}
-	if cfg.AnthropicDefaultFableModel != "" {
-		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = cfg.AnthropicDefaultFableModel
-	}
-	if cfg.BotLogin != "" {
-		env["BOT_GITHUB_LOGIN"] = cfg.BotLogin
-	}
-
+	// The security agent's dispatch table (main.go and cmd/run-task dispatchAgent)
+	// always supplies a pre-dispatched agent. Fail closed if one is missing:
+	// rebuilding a poster/verifier-wired fallback agent here would re-introduce the
+	// GitHub-posting machinery this agent must never construct (spec non-goal).
 	agent := cfg.Agent
 	if agent == nil {
-		botLogin := ResolveBotLogin(env)
-		poster, verifier := ResolvePosters(cfg, botLogin)
-		agent = CreateAgent(
-			cfg.ClaudeConfigDir,
-			cfg.AgentDir,
-			cfg.Model,
-			cfg.GHToken,
-			env,
-			repoManager,
-			cfg.ReviewMode,
-			cfg.RepoAllowlist,
-			poster,
-			verifier,
-			cfg.CurrentDateTime,
-			cfg.MaxReviewDuration,
-		)
+		return nil, errors.New(ctx, "no agent dispatched: RunAgent requires a pre-dispatched agent from the security dispatch table; refusing to build a poster/verifier-wired fallback agent")
 	}
 	return agent.Run(ctx, cfg.Phase, cfg.TaskContent, cfg.Deliverer)
 }
