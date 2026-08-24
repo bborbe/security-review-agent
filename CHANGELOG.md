@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat: thread the --security flag through the execution instructions and fail closed to human_review when the coding plugin lacks it
 - feat: adapt the pr-reviewer seed into the security-review agent — renamed module, agent identity, service name, and image to the security-review identity; docs updated to the security variant
 - feat: route security-review tasks to a no-posting security agent (nil poster + nil verifier) and drop the pr-review / pr-override routes
+- refactor: fail closed when RunAgent receives no pre-dispatched agent — remove the poster/verifier-wired fallback so GitHub-posting machinery can never be constructed by this agent
 
 ## v0.5.3
 
