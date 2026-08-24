@@ -435,6 +435,128 @@ prior review body
 				})
 			})
 		})
+
+		Context("missing --security flag", func() {
+			// AC4: when the runtime-read /coding:pr-review command file does not
+			// declare --security, assembly fails closed and the step routes to
+			// human_review BEFORE runClaude — the runner is never invoked, no
+			// plain (non-security) review runs, and no ## Review is written.
+			It("fails closed to human_review without invoking the runner", func() {
+				tmpDir, err := os.MkdirTemp("", "exec-no-security-*")
+				Expect(err).NotTo(HaveOccurred())
+				defer func() {
+					Expect(os.RemoveAll(tmpDir)).To(Succeed())
+				}()
+
+				cmdDir := filepath.Join(tmpDir, "plugins", "marketplaces", "coding", "commands")
+				Expect(os.MkdirAll(cmdDir, 0750)).To(Succeed())
+				Expect(os.WriteFile(
+					filepath.Join(cmdDir, "pr-review.md"),
+					[]byte(
+						"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nProcedure body.\n",
+					),
+					0600,
+				)).To(Succeed())
+
+				fakeRunner := &mocks.ClaudeRunnerMock{}
+				repoManager.EnsureWorktreeReturns("/work/test", nil)
+
+				currentDateTime := libtime.NewCurrentDateTime()
+				noSecurityStep := pkg.NewCheckoutExecutionStep(
+					repoManager,
+					claudelib.ClaudeConfigDir(tmpDir),
+					"agent",
+					"sonnet",
+					map[string]string{},
+					claudelib.AllowedTools{"Read"},
+					"standard",
+					nil,
+					nil,
+					nil,
+					currentDateTime,
+					fakeRunner,
+					libtime.Duration(25*time.Minute),
+				)
+
+				md, err := agentlib.ParseMarkdown(ctx, `---
+clone_url: https://github.com/bborbe/maintainer.git
+ref: abc123
+base_ref: main
+task_identifier: 00000000-0000-0000-0000-000000000001
+---
+# PR Review
+
+https://github.com/bborbe/maintainer/pull/14
+`)
+				Expect(err).NotTo(HaveOccurred())
+
+				result, err := noSecurityStep.Run(ctx, md)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.Status).To(Equal(agentlib.AgentStatusNeedsInput))
+				Expect(result.Message).To(ContainSubstring("--security"))
+				// The runner is never invoked — no plain review is ever run.
+				Expect(fakeRunner.RunCallCount()).To(Equal(0))
+				// No ## Review is written on the fail-closed path.
+				_, exists := md.FindSection("## Review")
+				Expect(exists).To(BeFalse())
+			})
+		})
+
+		Context("plugin command file missing", func() {
+			// A read failure (missing plugin file) is NOT a missing-flag error:
+			// securityFlagMissingResult returns nil and the assembly error keeps
+			// its existing error-propagation behavior — Run fails loud, never
+			// routed to NeedsInput, runner never invoked.
+			It("propagates the assembly error (not NeedsInput)", func() {
+				tmpDir, err := os.MkdirTemp("", "exec-no-plugin-*")
+				Expect(err).NotTo(HaveOccurred())
+				defer func() {
+					Expect(os.RemoveAll(tmpDir)).To(Succeed())
+				}()
+
+				cmdDir := filepath.Join(tmpDir, "plugins", "marketplaces", "coding", "commands")
+				Expect(os.MkdirAll(cmdDir, 0750)).To(Succeed())
+				// No pr-review.md written — the read fails before any --security probe.
+
+				fakeRunner := &mocks.ClaudeRunnerMock{}
+				repoManager.EnsureWorktreeReturns("/work/test", nil)
+
+				currentDateTime := libtime.NewCurrentDateTime()
+				noPluginStep := pkg.NewCheckoutExecutionStep(
+					repoManager,
+					claudelib.ClaudeConfigDir(tmpDir),
+					"agent",
+					"sonnet",
+					map[string]string{},
+					claudelib.AllowedTools{"Read"},
+					"standard",
+					nil,
+					nil,
+					nil,
+					currentDateTime,
+					fakeRunner,
+					libtime.Duration(25*time.Minute),
+				)
+
+				md, err := agentlib.ParseMarkdown(ctx, `---
+clone_url: https://github.com/bborbe/maintainer.git
+ref: abc123
+base_ref: main
+task_identifier: 00000000-0000-0000-0000-000000000001
+---
+# PR Review
+
+https://github.com/bborbe/maintainer/pull/14
+`)
+				Expect(err).NotTo(HaveOccurred())
+
+				result, runErr := noPluginStep.Run(ctx, md)
+				Expect(runErr).To(HaveOccurred())
+				Expect(runErr.Error()).To(ContainSubstring("read plugin command file"))
+				Expect(result).To(BeNil())
+				Expect(fakeRunner.RunCallCount()).To(Equal(0))
+			})
+		})
 	})
 
 	Describe("posting behavior", func() {
@@ -721,7 +843,7 @@ prior review body
 			Expect(os.WriteFile(
 				filepath.Join(cmdDir, "pr-review.md"),
 				[]byte(
-					"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nProcedure body.\n",
+					"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nSecurity review flag: --security.\nProcedure body.\n",
 				),
 				0600,
 			)).To(Succeed())
@@ -794,7 +916,7 @@ https://github.com/bborbe/maintainer/pull/14
 				Expect(os.WriteFile(
 					filepath.Join(cmdDir, "pr-review.md"),
 					[]byte(
-						"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nProcedure body.\n",
+						"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nSecurity review flag: --security.\nProcedure body.\n",
 					),
 					0600,
 				)).To(Succeed())
@@ -868,7 +990,7 @@ https://github.com/bborbe/maintainer/pull/14
 				Expect(os.WriteFile(
 					filepath.Join(cmdDir, "pr-review.md"),
 					[]byte(
-						"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nProcedure body.\n",
+						"---\ndescription: Test plugin\nallowed-tools: Task\n---\n# PR Review\n\nSecurity review flag: --security.\nProcedure body.\n",
 					),
 					0600,
 				)).To(Succeed())
