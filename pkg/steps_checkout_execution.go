@@ -14,8 +14,8 @@ import (
 	agentlib "github.com/bborbe/agent"
 	claudelib "github.com/bborbe/agent/claude"
 	"github.com/bborbe/errors"
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
-	"github.com/bborbe/github-pr-review-agent/pkg/prompts"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/prompts"
 	libtime "github.com/bborbe/time"
 	"github.com/golang/glog"
 
@@ -381,7 +381,7 @@ func (s *checkoutExecutionStep) postAndRoute(
 	// request-changes verdicts (model-authored reason) do NOT log.
 	if verdict.Verdict == VerdictRequestChanges && isFailClosedReason(verdict.Reason) {
 		glog.Warningf(
-			"pr-reviewer fail-closed to request-changes: reason=%q reviewBody_len=%d reviewBody_tail=%q",
+			"security-reviewer fail-closed to request-changes: reason=%q reviewBody_len=%d reviewBody_tail=%q",
 			verdict.Reason,
 			len(reviewBody),
 			lastChars(reviewBody, 300),

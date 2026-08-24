@@ -1,4 +1,4 @@
-module github.com/bborbe/github-pr-review-agent
+module github.com/bborbe/security-review-agent
 
 go 1.27.0
 

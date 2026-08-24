@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Autonomous PR review agent — given a GitHub/Bitbucket PR URL it clones the repo, runs a Claude Code review inside a `claude-yolo` container, and posts the verdict back (`approve` / `request-changes` / `comment`).
+Autonomous **security review agent** — it consumes `security-review` tasks, checks out the target PR at its head, runs the Claude Code security review (`/coding:pr-review --security`) inside a `claude-yolo` container, and writes the findings plus the binary verdict (`approve` / `request-changes`) into the task's `## Review` section. It **never posts to GitHub** — the run ends at the vault write-back.
 
 ## Dark Factory Workflow
 
@@ -72,7 +72,7 @@ Follows the [coding-guidelines](https://github.com/bborbe/coding-guidelines). Go
 
 - `make precommit` — fmt, generate, test, lint, vet, vuln, license
 - `make test` — tests only
-- `VERSION=vX.Y.Z make buca` — build + push `docker.io/bborbe/github-pr-review-agent:vX.Y.Z`, then apply
+- `VERSION=vX.Y.Z make buca` — build + push `docker.io/bborbe/security-review-agent:vX.Y.Z`, then apply
 
 ### Test conventions
 
@@ -84,23 +84,21 @@ Follows the [coding-guidelines](https://github.com/bborbe/coding-guidelines). Go
 Standalone binary; the shared lib is imported from `github.com/bborbe/maintainer` (Helm chart + deploy model live there). Tasks are produced by `github-pr-watcher` and dispatched by the agent-task-executor.
 
 - `main.go` — Kubernetes Job entry (env-driven; `/main` in the image). Production path, Kafka/CQRS.
-- `cmd/run-task/` — local CLI entry, reads a task file (`--task-file`), runs a given `--phase`, and writes the result back to the same file. Use `--skip-post` to suppress GitHub writes for local runs against third-party PRs.
-- `cmd/cli/` — auxiliary local tool, takes a PR URL positional arg and optional `--comment-only` flag for local review runs. `cmd/mint-iat/` — GitHub App installation-token smoke tool.
+- `cmd/run-task/` — local CLI entry, reads a task file (`--task-file`), runs a given `--phase`, and writes the result back to the same file.
+- `cmd/cli/` — legacy local tool (pr-reviewer lineage), takes a PR URL positional arg. `cmd/mint-iat/` — GitHub App installation-token smoke tool.
 - `pkg/steps_planning.go` — parse PR URL → platform/owner/repo/number, fetch PR metadata.
-- `pkg/steps_checkout_execution.go` — clone at PR head into scratch, run the `/pr-review` container.
+- `pkg/steps_checkout_execution.go` — clone at PR head into scratch, run the `/coding:pr-review --security` container; writes findings + verdict to `## Review` (vault-first), never posts.
 - `pkg/steps_review.go` — parse the JSON verdict from review output.
-- `pkg/steps_override.go` — `pr-override` path: post an unconditional `APPROVE` for trusted-author label PRs.
 - `pkg/steps_gh_token.go` — mint the GitHub App installation token per run.
 - `pkg/verdict.go` — verdict types + parsing.
-- `pkg/githubposter/` + `pkg/poster_types.go` — post the structured review (`APPROVE`/`REQUEST_CHANGES`/`COMMENT`).
 - `pkg/allowlist.go` — `REPO_ALLOWLIST` matching (glob + `!` negation).
-- `pkg/github/`, `pkg/bitbucket/` — platform REST clients.
+- `pkg/github/`, `pkg/bitbucket/` — platform REST clients (used read-only: metadata, clone).
 - `pkg/githubauth/` — GitHub App auth. `pkg/git/` — clone ops. `pkg/prompts/` — embedded review prompt(s). `pkg/factory/` — pure-composition wiring.
 
 ## Key Design Decisions
 
-- **LLM produces a verdict; posting is gated code.** The Claude review returns a verdict only. Whether it posts as `APPROVE`/`REQUEST_CHANGES` (vs demoted `COMMENT`) is decided by the target repo's `.maintainer.yaml` `prReviewer.autoApprove`, read from the PR head.
-- **`pr-override` is the one unconditional-approve path** — trusted-author `override-review` label, `PostOverrideApprove`, no autoApprove gate, no clone, no container. Do not widen it.
+- **No GitHub posting — the run ends at the vault write-back.** The Claude review returns a verdict only, written to the task's `## Review` section. There is no poster and no verifier — nothing is ever posted to a PR, and no new code path may add one.
+- **`--security` is the review contract.** The execution phase runs the full security pipeline (`/coding:pr-review --security`); if the runtime-read plugin command file does not declare `--security`, the phase fails closed to `human_review` rather than running a non-security review.
 - **Clones are throwaway scratch** at the PR head, cleaned up after the run — never written back.
 - **`REPO_ALLOWLIST` is enforced** — a PR outside the allowlist is refused, never reviewed.
 - **Escalation over guessing** — a step that cannot proceed returns `NeedsInput`/`human_review`, never auto-advances to `done`.
@@ -109,4 +107,4 @@ Standalone binary; the shared lib is imported from `github.com/bborbe/maintainer
 
 ## Releasing
 
-This repo is `release.autoRelease: true` (`.maintainer.yaml`) — released by the sibling `github-releaser-agent` post-merge. Keep `## Unreleased` bullets accurate, merge to master, let the bot tag. Do NOT hand-rename `## Unreleased` or `git tag`. Full procedure + deploy: [docs/releasing-github-pr-review-agent.md](docs/releasing-github-pr-review-agent.md).
+This repo is `release.autoRelease: true` (`.maintainer.yaml`) — released by the sibling `github-releaser-agent` post-merge. Keep `## Unreleased` bullets accurate, merge to master, let the bot tag. Do NOT hand-rename `## Unreleased` or `git tag`. Full procedure + deploy: [docs/releasing-security-review-agent.md](docs/releasing-security-review-agent.md).

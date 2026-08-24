@@ -5,11 +5,11 @@
 /.dark-factory.log
 /.mcp-*
 /cover.out
-/pr-reviewer
+/security-reviewer-agent
 /prompts/log
 /prompts/in-progress/*.lock
 /run-task
 /specs/log
 /specs/in-progress/*.lock
 /vendor/
-/github-pr-review-agent
+/security-review-agent

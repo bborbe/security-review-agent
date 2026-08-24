@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	pkg "github.com/bborbe/github-pr-review-agent/pkg"
+	pkg "github.com/bborbe/security-review-agent/pkg"
 	libtime "github.com/bborbe/time"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

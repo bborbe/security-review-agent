@@ -1,5 +1,5 @@
 ---
-assignee: pr-reviewer-agent
+assignee: security-reviewer-agent
 base_ref: master
 clone_url: https://github.com/bborbe/maintainer.git
 phase: done

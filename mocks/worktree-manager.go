@@ -8,7 +8,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/git"
 )
 
 type WorktreeManager struct {

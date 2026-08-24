@@ -1,9 +1,12 @@
 ---
-status: draft
+status: prompted
 tags:
     - dark-factory
     - spec
-created: "2026-08-24"
+approved: "2026-08-24T20:15:53Z"
+generating: "2026-08-24T20:16:49Z"
+prompted: "2026-08-24T20:34:03Z"
+branch: dark-factory/security-review-agent-adaptation
 ---
 
 ## Summary

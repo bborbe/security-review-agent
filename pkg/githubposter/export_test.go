@@ -5,7 +5,7 @@
 package githubposter
 
 import (
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
 )
 
 func init() {

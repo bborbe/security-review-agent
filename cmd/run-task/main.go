@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Command run-task is the local-CLI entry point for maintainer-agent-pr-reviewer.
+// Command run-task is the local-CLI entry point for maintainer-agent-security-reviewer.
 //
 // Reads a markdown task file from disk, runs the agent against it, and
 // writes the updated content back to the same file. Mirrors the Kafka
@@ -18,9 +18,9 @@ import (
 	claudelib "github.com/bborbe/agent/claude"
 	"github.com/bborbe/cqrs/base"
 	"github.com/bborbe/errors"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/factory"
-	"github.com/bborbe/github-pr-review-agent/pkg/githubauth"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/factory"
+	"github.com/bborbe/security-review-agent/pkg/githubauth"
 	libsentry "github.com/bborbe/sentry"
 	"github.com/bborbe/service"
 	libtime "github.com/bborbe/time"
@@ -138,7 +138,7 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		return err
 	}
 	if a.SkipPost {
-		glog.V(2).Infof("pr-reviewer skip-post enabled — GitHub writes suppressed")
+		glog.V(2).Infof("security-reviewer skip-post enabled — GitHub writes suppressed")
 	}
 
 	authSetup := githubauth.NewNoopAuthSetup()
@@ -181,7 +181,7 @@ func (a *application) resolveAuth(ctx context.Context) (string, error) {
 	if !useGitHubApp {
 		return "", errors.Errorf(
 			ctx,
-			"pr-reviewer auth: GitHub App credentials not configured — set APP_ID, INSTALLATION_ID, and PEM_KEY_FILE (or PEM_KEY)",
+			"security-reviewer auth: GitHub App credentials not configured — set APP_ID, INSTALLATION_ID, and PEM_KEY_FILE (or PEM_KEY)",
 		)
 	}
 	appCfg := githubapp.Config{AppID: a.AppID, InstallationID: a.InstallationID}
@@ -195,7 +195,7 @@ func (a *application) resolveAuth(ctx context.Context) (string, error) {
 		return "", errors.Wrap(ctx, err, "mint github app iat")
 	}
 	glog.V(2).Infof(
-		"pr-reviewer auth mode=github-app app_id=%d installation_id=%d",
+		"security-reviewer auth mode=github-app app_id=%d installation_id=%d",
 		a.AppID, a.InstallationID,
 	)
 	return iat, nil

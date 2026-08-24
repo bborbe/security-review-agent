@@ -18,7 +18,7 @@ var _ = Describe("Main", func() {
 	It("Compiles", func() {
 		var err error
 		_, err = gexec.Build(
-			"github.com/bborbe/github-pr-review-agent/cmd/run-task",
+			"github.com/bborbe/security-review-agent/cmd/run-task",
 			"-mod=mod",
 		)
 		Expect(err).NotTo(HaveOccurred())

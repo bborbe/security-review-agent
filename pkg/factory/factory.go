@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package factory wires concrete dependencies for the maintainer-agent-pr-reviewer binary.
+// Package factory wires concrete dependencies for the maintainer-agent-security-reviewer binary.
 //
 // All factory functions follow the Create* prefix convention and contain
 // zero business logic — they compose constructors with config.
@@ -17,16 +17,16 @@ import (
 	delivery "github.com/bborbe/agent/delivery"
 	"github.com/bborbe/agent/healthcheck"
 	"github.com/bborbe/cqrs/base"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
-	"github.com/bborbe/github-pr-review-agent/pkg/githubposter"
-	"github.com/bborbe/github-pr-review-agent/pkg/prompts"
 	libkafka "github.com/bborbe/kafka"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/githubposter"
+	"github.com/bborbe/security-review-agent/pkg/prompts"
 	libtime "github.com/bborbe/time"
 	domain "github.com/bborbe/vault-cli/pkg/domain"
 )
 
-const serviceName = "maintainer-agent-pr-reviewer"
+const serviceName = "maintainer-agent-security-reviewer"
 
 // Per-phase tool scopes. Principle: each phase gets the smallest set that
 // lets it do its job. Planning + Review are read-only inspection. Execution
@@ -181,7 +181,7 @@ func CreateReviewVerifier(
 	)
 }
 
-// CreateAgent assembles the full 3-phase pr-reviewer agent with per-phase
+// CreateAgent assembles the full 3-phase security-reviewer agent with per-phase
 // tool scopes and per-phase prompts:
 //
 //   - planning: read-only diff inspection → ## Plan (JSON)
@@ -244,7 +244,7 @@ func CreateAgent(
 	)
 }
 
-// CreateAgentProvider wires the per-task-type dispatch table for maintainer-agent-pr-reviewer.
+// CreateAgentProvider wires the per-task-type dispatch table for maintainer-agent-security-reviewer.
 // TaskTypePRReview routes to the 3-phase domain agent built by CreateAgent.
 // TaskTypeHealthcheck routes to a liveness agent that reuses the Claude runner factory.
 // Pure plumbing; no conditional, no error.

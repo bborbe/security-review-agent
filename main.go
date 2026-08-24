@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Command maintainer-agent-pr-reviewer is the Kafka entry point for the PR-review
-// agent — spawned as a K8s Job by task/executor with TASK_CONTENT +
-// TASK_ID + PHASE + KAFKA_BROKERS env. For local CLI mode (file-based),
-// see cmd/run-task/main.go.
+// Command maintainer-agent-security-reviewer is the Kafka entry point for the
+// security-review agent — spawned as a K8s Job by task/executor with
+// TASK_CONTENT + TASK_ID + PHASE + KAFKA_BROKERS env. For local CLI mode
+// (file-based), see cmd/run-task/main.go.
 package main
 
 import (
@@ -19,11 +19,11 @@ import (
 	libmetrics "github.com/bborbe/agent/metrics"
 	"github.com/bborbe/cqrs/base"
 	"github.com/bborbe/errors"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/factory"
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
-	"github.com/bborbe/github-pr-review-agent/pkg/githubauth"
 	libkafka "github.com/bborbe/kafka"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/factory"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/githubauth"
 	libsentry "github.com/bborbe/sentry"
 	"github.com/bborbe/service"
 	libtime "github.com/bborbe/time"
@@ -36,7 +36,7 @@ import (
 	repoallowlist "github.com/bborbe/maintainer/repoallowlist"
 )
 
-const agentName = "pr-reviewer-agent"
+const agentName = "security-reviewer-agent"
 
 func main() {
 	app := &application{}
@@ -134,7 +134,7 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		glog.V(2).Infof("prometheus push completed")
 	}()
 	start := libtime.NewCurrentDateTime().Now().Time()
-	glog.V(2).Infof("maintainer-agent-pr-reviewer started phase=%s", a.Phase)
+	glog.V(2).Infof("maintainer-agent-security-reviewer started phase=%s", a.Phase)
 
 	if err := prpkg.ValidateReviewMaxDuration(ctx, a.MaxReviewDuration); err != nil {
 		jobMetrics.RecordRun(agentlib.AgentStatusFailed)
@@ -284,7 +284,7 @@ func (a *application) resolveAuth(ctx context.Context) (string, error) {
 	if !useGitHubApp {
 		return "", errors.Errorf(
 			ctx,
-			"pr-reviewer auth: GitHub App credentials not configured — set APP_ID, INSTALLATION_ID, and PEM_KEY_FILE (or PEM_KEY)",
+			"security-reviewer auth: GitHub App credentials not configured — set APP_ID, INSTALLATION_ID, and PEM_KEY_FILE (or PEM_KEY)",
 		)
 	}
 	var iat string
@@ -306,7 +306,7 @@ func (a *application) resolveAuth(ctx context.Context) (string, error) {
 		return "", errors.Wrap(ctx, err, "mint github app iat")
 	}
 	glog.V(2).Infof(
-		"pr-reviewer auth mode=github-app app_id=%d installation_id=%d",
+		"security-reviewer auth mode=github-app app_id=%d installation_id=%d",
 		a.AppID, a.InstallationID,
 	)
 	return iat, nil
@@ -324,7 +324,11 @@ func (a *application) createDeliverer(
 	if len(a.KafkaBrokers) == 0 {
 		return nil, nil, errors.Errorf(ctx, "KAFKA_BROKERS must be set when TASK_ID is set")
 	}
-	syncProducer, err := libkafka.NewSyncProducerWithName(ctx, a.KafkaBrokers, "agent-pr-reviewer")
+	syncProducer, err := libkafka.NewSyncProducerWithName(
+		ctx,
+		a.KafkaBrokers,
+		"agent-security-reviewer",
+	)
 	if err != nil {
 		return nil, nil, errors.Wrap(ctx, err, "create kafka sync producer")
 	}
