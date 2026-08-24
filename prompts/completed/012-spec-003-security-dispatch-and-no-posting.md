@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [003-security-review-agent-adaptation]
+summary: Routed security-review tasks to a no-posting security agent (nil poster + nil verifier), dropped the pr-review/pr-override routes, moved poster constructors to pkg/factory/poster.go, and locked the dispatch + no-posting behavior with unit tests; make precommit exits 0
+execution_id: security-review-agent-security-exec-012-spec-003-security-dispatch-and-no-posting
+dark-factory-version: dev
 created: "2026-08-24T20:22:59Z"
 queued: "2026-08-24T20:44:38Z"
+started: "2026-08-24T20:54:04Z"
+completed: "2026-08-24T21:01:55Z"
 branch: dark-factory/security-review-agent-adaptation
 ---
 

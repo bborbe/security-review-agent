@@ -9,9 +9,6 @@
 package factory
 
 import (
-	"net/http"
-	"time"
-
 	agentlib "github.com/bborbe/agent"
 	claudelib "github.com/bborbe/agent/claude"
 	delivery "github.com/bborbe/agent/delivery"
@@ -20,7 +17,6 @@ import (
 	libkafka "github.com/bborbe/kafka"
 	prpkg "github.com/bborbe/security-review-agent/pkg"
 	"github.com/bborbe/security-review-agent/pkg/git"
-	"github.com/bborbe/security-review-agent/pkg/githubposter"
 	"github.com/bborbe/security-review-agent/pkg/prompts"
 	libtime "github.com/bborbe/time"
 	domain "github.com/bborbe/vault-cli/pkg/domain"
@@ -30,12 +26,11 @@ const serviceName = "maintainer-agent-security-reviewer"
 
 // Per-phase tool scopes. Principle: each phase gets the smallest set that
 // lets it do its job. Planning + Review are read-only inspection. Execution
-// gets broader git access for cross-file reads; posting happens in-process
-// via the PrPoster (Go net/http, not gh CLI) after the LLM step completes,
-// gated by bot-identity self-check (GET /app slug-derived login) and
-// per-repo .maintainer.yaml (prReviewer.autoApprove: bool). The ai_review phase
-// independently verifies the post via GET /pulls/{n}/reviews before
-// advancing to done.
+// gets broader git access for cross-file reads. The security agent wires no
+// poster and no verifier: the execution phase writes ## Review to the vault
+// and routes to ai_review without any GitHub posting, and the ai_review phase
+// writes ## Verdict without post-verification — the run ends at the vault
+// write-back, nothing is ever posted to a PR.
 var (
 	planningTools = claudelib.AllowedTools{
 		"Read", "Grep", "Glob",
@@ -152,43 +147,17 @@ func CreateFileResultDeliverer(filePath string) agentlib.ResultDeliverer {
 	)
 }
 
-// CreatePrPoster wires a PrPoster backed by a scoped http.Client.
-// token is the bot PAT (GH_TOKEN env); botLogin is the bot GitHub login
-// (BOT_GITHUB_LOGIN env, default "ben-s-pull-request-reviewer[bot]" if empty). Pure plumbing; no logic.
-func CreatePrPoster(
-	token, botLogin string,
-	currentDateTime libtime.CurrentDateTimeGetter,
-) prpkg.PrPoster {
-	return githubposter.NewPrPoster(
-		&http.Client{Timeout: 15 * time.Second},
-		token,
-		botLogin,
-		currentDateTime,
-	)
-}
-
-// CreateReviewVerifier wires a ReviewVerifier backed by a scoped http.Client.
-// token is the bot PAT; botLogin is the expected bot login.
-func CreateReviewVerifier(
-	token, botLogin string,
-	currentDateTime libtime.CurrentDateTimeGetter,
-) prpkg.ReviewVerifier {
-	return githubposter.NewReviewVerifier(
-		&http.Client{Timeout: 15 * time.Second},
-		token,
-		botLogin,
-		currentDateTime,
-	)
-}
-
 // CreateAgent assembles the full 3-phase security-reviewer agent with per-phase
 // tool scopes and per-phase prompts:
 //
 //   - planning: read-only diff inspection → ## Plan (JSON)
-//   - execution: read + cross-file inspection → ## Review (JSON); posts review to GitHub via PrPoster
+//   - execution: read + cross-file inspection → ## Review (JSON). With a nil
+//     prPoster (the security agent wires no poster) the step writes ## Review to
+//     the vault and routes to ai_review without any GitHub posting.
 //   - ai_review: minimal read-only fresh-context verifier → ## Verdict (JSON);
-//     verdict=pass → done, otherwise → human_review; verifier confirms review
-//     persisted on GitHub (nil verifier skips verification)
+//     verdict=pass → done, otherwise → human_review. With a nil verifier (the
+//     security agent wires no verifier) the step writes ## Verdict without any
+//     post-verification.
 //
 // maxDuration is the soft REVIEW_MAX_DURATION budget threaded into every phase
 // step. The execution step gets a nil runner (runClaude builds a fresh one).
@@ -244,9 +213,13 @@ func CreateAgent(
 	)
 }
 
-// CreateAgentProvider wires the per-task-type dispatch table for maintainer-agent-security-reviewer.
-// TaskTypePRReview routes to the 3-phase domain agent built by CreateAgent.
-// TaskTypeHealthcheck routes to a liveness agent that reuses the Claude runner factory.
+// CreateAgentProvider wires the per-task-type dispatch table for
+// maintainer-agent-security-reviewer. TaskTypeSecurityReview routes to the
+// 3-phase security agent built by CreateAgent with nil poster + nil verifier
+// (no GitHub posting — the run ends at the ## Review write-back).
+// TaskTypeHealthcheck routes to the liveness agent. pr-review and pr-override
+// are deliberately NOT registered: a task mis-routed to this binary is refused
+// by the unknown-task-type rejection and never run as a plain review.
 // Pure plumbing; no conditional, no error.
 func CreateAgentProvider(
 	claudeConfigDir claudelib.ClaudeConfigDir,
@@ -260,9 +233,6 @@ func CreateAgentProvider(
 	currentDateTime libtime.CurrentDateTimeGetter,
 	maxDuration libtime.Duration,
 ) agentlib.AgentProvider {
-	botLogin := ResolveBotLogin(env)
-	poster := CreatePrPoster(ghToken, botLogin, currentDateTime)
-	verifier := CreateReviewVerifier(ghToken, botLogin, currentDateTime)
 	domainAgent := CreateAgent(
 		claudeConfigDir,
 		agentDir,
@@ -272,8 +242,8 @@ func CreateAgentProvider(
 		repoManager,
 		reviewMode,
 		repoAllowlist,
-		poster,
-		verifier,
+		nil, // prPoster — the security agent wires no poster
+		nil, // verifier — the security agent wires no verifier
 		currentDateTime,
 		maxDuration,
 	)
@@ -285,27 +255,9 @@ func CreateAgentProvider(
 		claudelib.AllowedTools{},
 	)
 	livenessAgent := healthcheck.NewAgent(healthcheck.NewClaudeStep(healthcheckRunner))
-
-	// pr-override: a second task type on this same service. The override action
-	// is deterministic (post an APPROVE at head SHA so a false-positive review
-	// no longer blocks merge), so it is a code-only single-phase agent — no
-	// Claude, no clone — reusing the poster already built above. The phase is
-	// named "execution" (a valid domain.TaskPhase, matching the frontmatter the
-	// watcher emits — the vault-cli validator rejects unknown phase literals);
-	// task_type pr-override, not the phase name, is what routes here, so there
-	// is no collision with the review agent's execution phase.
-	overrideAgent := agentlib.NewAgent(
-		agentlib.NewPhase(
-			domain.TaskPhaseExecution,
-			prpkg.NewGHTokenCheckStep(ghToken),
-			prpkg.NewOverrideStep(poster, botLogin),
-		),
-	)
-
 	return agentlib.NewAgentProvider(serviceName, map[agentlib.TaskType]*agentlib.Agent{
-		agentlib.TaskTypePRReview:    domainAgent,
+		prpkg.TaskTypeSecurityReview: domainAgent,
 		agentlib.TaskTypeHealthcheck: livenessAgent,
-		prpkg.TaskTypePROverride:     overrideAgent,
 	})
 }
 

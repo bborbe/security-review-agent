@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 - feat: adapt the pr-reviewer seed into the security-review agent — renamed module, agent identity, service name, and image to the security-review identity; docs updated to the security variant
+- feat: route security-review tasks to a no-posting security agent (nil poster + nil verifier) and drop the pr-review / pr-override routes
 
 ## v0.5.3
 
