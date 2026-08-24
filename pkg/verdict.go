@@ -261,25 +261,42 @@ const ReasonConcernsNotVerified = "one or more ## Plan concerns not verified"
 // "not verified" in the execution output format's concerns_addressed list.
 var unverifiedConcernPattern = regexp.MustCompile(`(?i)not verified|unverified`)
 
-// benignUnverifiedPattern matches a "not verified" concern that self-describes
-// as not-applicable — the model is explaining WHY verification was unnecessary
-// (config/docs-only change, no code to verify), NOT that it ran out of time
-// budget on a MUST-tier item. Narrowing gate: such concerns must NOT fail-close
-// an approve. Regression 2026-08-23 (bborbe/math#18): the bare "not verified"
-// substring matched "not verified (code logic not applicable — this is a
-// config/changelog-only diff with no Go code changes)" and demoted a clean
-// approve → false CHANGES_REQUESTED (admin-merged). Only genuinely unexamined
-// concerns (no benign explanation) still fail-close, preserving the weak-model
-// MUST-tier protection (SC5).
-var benignUnverifiedPattern = regexp.MustCompile(
-	`(?i)not applicable|config[- ]only|(docs?|documentation)[- ]only|no (go |code |source )*changes|nothing to (verify|check)`,
+// mustTierBlockerPattern matches an unverified concern that carries MUST-tier
+// blocker language — the model flags the unverified item as a requirement that
+// must be satisfied before merge ("must verify", "alerts will never fire",
+// "blocking"). Only these fail-close an approve (tier-keyed gate). Regression
+// 2026-08-24 (bborbe/nuke#68): the previous benign-phrase whitelist escaped the
+// model's varied organic phrasing ("could not be cross-checked against the
+// actual controller code. Not verified." — non-blocking per the review's own
+// "No Must/Should Fix issues found") and demoted a clean approve → false
+// CHANGES_REQUESTED on github-pr-review-agent v0.6.2 (re-review 5 min later
+// posted APPROVED; metric confirmed correct). Keying on the concern's own
+// blocker tiering instead of a fixed phrase list is robust to any organic
+// phrasing.
+var mustTierBlockerPattern = regexp.MustCompile(
+	`(?i)must (fix|verify|be (addressed|checked|resolved)|resolve)|will never (fire|work)|without (it|this)|blocking|blocks? (merge|ship|deploy)|cannot (merge|ship|be merged)|breaks? (the|this|prod|production)|required (before|to)|fatal|merge[ -]?blocker`,
+)
+
+// benignGapPattern matches an unverified concern that EXPLAINS the verification
+// gap as non-blocking/contextual — verification was unnecessary or impossible
+// for a stated benign reason (config/docs-only change, source not in this repo,
+// could not be cross-checked, no code changes). Such concerns pass an approve;
+// only MUST-tier blockers (mustTierBlockerPattern, checked first) or bare
+// unexamined admissions (no explanation at all) fail-close. Genuinely unexamined
+// cases like "security: rate-limit not verified" still fail-close (SC5).
+var benignGapPattern = regexp.MustCompile(
+	`(?i)not applicable|config[- ]only|(docs?|documentation)[- ]only|no (go |code |source )*changes|nothing to (verify|check)|source (is )?not (in|present in) (this|the) (repo|repository|monorepo)|could not be cross[- ]checked|no (blocking )?(issues|findings|problems) (found|identified)|not (an?|a) (issue|problem|blocker)`,
 )
 
 // HasUnverifiedConcerns reports whether the review body's verdict JSON flags
-// any ## Plan concern as "not verified" — i.e. the model stopped investigating
-// at the time budget before examining it. An approve that flags any concern
-// must be fail-closed to request-changes (see postAndRoute). Returns false for
-// a missing/malformed verdict block or an empty concerns list (no over-trigger).
+// any ## Plan concern as "not verified" AND the verification gap is
+// fail-close-worthy. Tier-keyed: an unverified concern fail-closes when it
+// carries MUST-tier blocker language (mustTierBlockerPattern) or is a bare
+// unexamined admission (no benign explanation); an unverified concern that
+// explains the gap as non-blocking (benignGapPattern) passes. An approve that
+// flags a fail-close-worthy concern must be demoted to request-changes (see
+// postAndRoute). Returns false for a missing/malformed verdict block or an
+// empty concerns list (no over-trigger).
 func HasUnverifiedConcerns(reviewText string) bool {
 	block, _, ok := findVerdictBlock(reviewText)
 	if !ok {
@@ -292,10 +309,22 @@ func HasUnverifiedConcerns(reviewText string) bool {
 		return false
 	}
 	for _, concern := range payload.ConcernsAddressed {
-		if unverifiedConcernPattern.MatchString(concern) &&
-			!benignUnverifiedPattern.MatchString(concern) {
+		if !unverifiedConcernPattern.MatchString(concern) {
+			continue
+		}
+		// Blocker-tier language is authoritative: an unverified item the model
+		// flags as a hard requirement still fail-closes even if it also
+		// mentions a benign-sounding reason (e.g. nuke#73: source not present
+		// in monorepo + "without it the alerts will never fire").
+		if mustTierBlockerPattern.MatchString(concern) {
 			return true
 		}
+		if benignGapPattern.MatchString(concern) {
+			continue
+		}
+		// Bare unexamined admission — no explanation why verification was
+		// skipped. Preserves the original weak-model MUST-tier protection.
+		return true
 	}
 	return false
 }
