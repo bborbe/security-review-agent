@@ -4,7 +4,7 @@
 
 package factory
 
-import "github.com/bborbe/github-pr-review-agent/pkg/githubposter"
+import "github.com/bborbe/security-review-agent/pkg/githubposter"
 
 // ResolveBotLogin returns env[githubposter.BotLoginEnv] when set, else
 // githubposter.DefaultBotLogin. Centralizes the fallback so all 3 call

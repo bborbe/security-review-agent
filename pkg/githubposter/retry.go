@@ -12,7 +12,7 @@ import (
 	"time"
 
 	errors "github.com/bborbe/errors"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
 )
 
 // errPhantomPOST is the sentinel returned by verify-GET closures when POST returned 200

@@ -9,8 +9,8 @@ import (
 
 	agentlib "github.com/bborbe/agent"
 	"github.com/bborbe/cqrs/base"
-	"github.com/bborbe/github-pr-review-agent/pkg/factory"
 	libkafkamocks "github.com/bborbe/kafka/mocks"
+	"github.com/bborbe/security-review-agent/pkg/factory"
 	libtime "github.com/bborbe/time"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

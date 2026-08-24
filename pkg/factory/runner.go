@@ -10,9 +10,9 @@ import (
 	agentlib "github.com/bborbe/agent"
 	claudelib "github.com/bborbe/agent/claude"
 	"github.com/bborbe/errors"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
-	"github.com/bborbe/github-pr-review-agent/pkg/githubauth"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/githubauth"
 	libtime "github.com/bborbe/time"
 	"github.com/bborbe/vault-cli/pkg/domain"
 	"github.com/golang/glog"
@@ -75,7 +75,7 @@ func ResolvePosters(cfg RunConfig, botLogin string) (prpkg.PrPoster, prpkg.Revie
 	return poster, verifier
 }
 
-// RunAgent performs the shared startup + execution flow for the maintainer-agent-pr-reviewer binary.
+// RunAgent performs the shared startup + execution flow for the maintainer-agent-security-reviewer binary.
 // Both entry points (Kafka pod main.go and local CLI cmd/run-task) call this after
 // resolving their I/O specifics — task content source and result deliverer.
 //

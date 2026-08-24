@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 
 	claudelib "github.com/bborbe/agent/claude"
-	"github.com/bborbe/github-pr-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

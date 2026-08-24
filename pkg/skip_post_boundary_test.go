@@ -23,9 +23,9 @@ import (
 
 	agentlib "github.com/bborbe/agent"
 	claudelib "github.com/bborbe/agent/claude"
-	"github.com/bborbe/github-pr-review-agent/mocks"
-	pkg "github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/factory"
+	"github.com/bborbe/security-review-agent/mocks"
+	pkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/factory"
 	libtime "github.com/bborbe/time"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

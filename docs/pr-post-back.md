@@ -1,5 +1,10 @@
 # PR Post-Back — How Reviews Are Delivered to GitHub
 
+> **Historical (pr-reviewer lineage):** this document describes the pr-reviewer
+> posting flow. The current agent does not post to GitHub — the run ends at the
+> `## Review` write-back. Retained as historical documentation of the posting
+> contract; it does not describe current behavior.
+
 After Claude writes the `## Review` section, the execution phase posts the verdict back to the PR as a GitHub review. This document describes the posting contract, the vault-first invariant, diagnostics, and failure routing.
 
 ## Vault-First Invariant

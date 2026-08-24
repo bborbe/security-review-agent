@@ -9,7 +9,7 @@ import (
 	"time"
 
 	libargument "github.com/bborbe/argument/v2"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

@@ -11,13 +11,13 @@ After completing your implementation, review your own changes against each crite
 - Follow the Interface → Constructor → Struct → Method pattern
 - `context.Context` is threaded through every IO call; no `context.Background()` outside `main`/tests
 
-## Review-Posting Safety (load-bearing — this agent writes to other people's PRs)
+## No GitHub Posting (load-bearing — this agent never writes to other people's PRs)
 
-- The posted review verdict is `APPROVE`/`REQUEST_CHANGES` only when the target repo's `.maintainer.yaml` `prReviewer.autoApprove: true`; otherwise it posts a plain `COMMENT` — never let a change bypass the `autoApprove` gate for an `APPROVE`
-- The `pr-override` path (`PostOverrideApprove`) is the one deliberate exception (trusted-author label) and posts unconditionally — do not widen that surface
+- The security-review agent wires a **nil poster and a nil verifier** — there is no code path that posts a review, comment, or approval to any GitHub PR
+- The run stops at the `## Review` write-back: findings + binary verdict (`approve` / `request-changes`) are written to the task's `## Review` section in the vault, and nothing is published to the PR
 - Clones are throwaway scratch dirs at the PR head, cleaned up after the run; no writes back to the cloned repo
 - `REPO_ALLOWLIST` is honored — a PR outside the allowlist is refused, never reviewed
-- No new code path posts to a PR other than the single structured review (+ the override approve)
+- No new code path may add a poster — a change that reintroduces GitHub posting fails this gate
 
 ## Testing
 
@@ -31,7 +31,7 @@ After completing your implementation, review your own changes against each crite
 
 - `make precommit` passes (fmt, generate, test, lint, vet, vuln, license)
 - No `exclude` or `replace` directives in `go.mod` (break remote install of the shared `github.com/bborbe/maintainer` lib)
-- The image still builds: `VERSION=vX.Y.Z make buca` produces `docker.io/bborbe/github-pr-review-agent:vX.Y.Z` (only when a runtime change warrants a manual check)
+- The image still builds: `VERSION=vX.Y.Z make buca` produces `docker.io/bborbe/security-review-agent:vX.Y.Z` (only when a runtime change warrants a manual check)
 
 ## Documentation
 

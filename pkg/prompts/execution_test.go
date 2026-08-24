@@ -12,7 +12,7 @@ import (
 	"time"
 
 	claudelib "github.com/bborbe/agent/claude"
-	"github.com/bborbe/github-pr-review-agent/pkg/prompts"
+	"github.com/bborbe/security-review-agent/pkg/prompts"
 	libtime "github.com/bborbe/time"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

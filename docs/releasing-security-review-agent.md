@@ -1,11 +1,11 @@
-# Releasing github-pr-review-agent
+# Releasing security-review-agent
 
-How to ship a new version of the PR review agent. Read before any manual release step.
+How to ship a new version of the security review agent. Read before any manual release step.
 
 ## One surface, one version stream
 
 This repo ships a **single artifact**: the container image
-`docker.io/bborbe/github-pr-review-agent:vX.Y.Z`, versioned by the git tag `vX.Y.Z`
+`docker.io/bborbe/security-review-agent:vX.Y.Z`, versioned by the git tag `vX.Y.Z`
 and the matching `## vX.Y.Z` section in `CHANGELOG.md`. There is **no plugin**, no
 `.claude-plugin/`, no marketplace, no version-alignment across manifests. The tag is
 the version; the image build pins to it.
@@ -45,10 +45,10 @@ After a successful release both `git status` (clean) and
 The tag alone does not deploy anything. This is a **mirrored agent service** in the
 `bborbe` fleet; the shared lib + Helm chart live in
 [`bborbe/maintainer`](https://github.com/bborbe/maintainer), and the running agent is
-spawned by the agent-task-executor from a Kafka PR-review task.
+spawned by the agent-task-executor from a Kafka security-review task.
 
 ```bash
-VERSION=vX.Y.Z make buca   # build + push docker.io/bborbe/github-pr-review-agent:vX.Y.Z, then apply
+VERSION=vX.Y.Z make buca   # build + push docker.io/bborbe/security-review-agent:vX.Y.Z, then apply
 ```
 
 Deploy specifics (version pin, dev vs prod, mirrored-agent apply) live on the service's
