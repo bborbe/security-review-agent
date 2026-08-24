@@ -52,8 +52,8 @@ type RunConfig struct {
 	// picks it up instead of the DefaultBotLogin fallback.
 	BotLogin string
 	// Agent overrides the agent used for execution. If nil, CreateAgent is called.
-	// Set by main.go after dispatching via CreateAgentProvider. cmd/run-task leaves
-	// this nil so CreateAgent is used for backward compatibility.
+	// Set by main.go and cmd/run-task after dispatching via CreateAgentProvider,
+	// which resolves the task's task_type through the security dispatch table.
 	Agent *agentlib.Agent
 	// CurrentDateTime is the time source injected into step structs and poster/verifier.
 	CurrentDateTime libtime.CurrentDateTimeGetter
