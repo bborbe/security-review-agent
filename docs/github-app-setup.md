@@ -1,6 +1,6 @@
 # GitHub App Setup
 
-Authentication for the PR reviewer agent uses a GitHub App identity. This document covers the App credentials, auth flow, and the smoke-test workflow used to validate everything end-to-end before wiring into production.
+Authentication for the security review agent uses a GitHub App identity. This document covers the App credentials, auth flow, and the smoke-test workflow used to validate everything end-to-end before wiring into production.
 
 ## Background
 
@@ -159,7 +159,7 @@ When the PEM needs rotation (compromise or periodic):
 1. <https://github.com/settings/apps/ben-s-pull-request-reviewer> → **Private keys** → **Generate a private key** (downloads new PEM)
 2. Upload the new PEM to Teamvault entry `kLoejw` (replace contents)
 3. Update the Kubernetes Secret in dev + prod clusters with the new PEM
-4. Restart pr-reviewer pods to pick up the new key
+4. Restart security-reviewer pods to pick up the new key
 5. After confirming the new key works, delete the old key entry on the App settings page
 
 App ID and Installation ID remain unchanged across rotations.

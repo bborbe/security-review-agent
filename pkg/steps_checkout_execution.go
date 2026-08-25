@@ -14,8 +14,8 @@ import (
 	agentlib "github.com/bborbe/agent"
 	claudelib "github.com/bborbe/agent/claude"
 	"github.com/bborbe/errors"
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
-	"github.com/bborbe/github-pr-review-agent/pkg/prompts"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/prompts"
 	libtime "github.com/bborbe/time"
 	"github.com/golang/glog"
 
@@ -192,6 +192,13 @@ func (s *checkoutExecutionStep) Run(
 		s.maxDuration,
 	)
 	if err != nil {
+		// The runtime-read /coding:pr-review command file lacks the --security
+		// contract — the security pipeline cannot run. Fail closed to
+		// human_review BEFORE runClaude, so no ## Review is written and no
+		// plain (non-security) review is ever run.
+		if result := s.securityFlagMissingResult(err); result != nil {
+			return result, nil
+		}
 		return nil, errors.Wrapf(
 			ctx,
 			err,
@@ -202,6 +209,25 @@ func (s *checkoutExecutionStep) Run(
 	}
 
 	return s.runClaude(ctx, md, worktreePath, instructions, funnel.Ran)
+}
+
+// securityFlagMissingResult returns the fail-closed human_review Result for a
+// missing-`--security` assembly error, or nil when err is any other failure.
+// The security pipeline cannot run without the flag, so the step routes to
+// human_review BEFORE runClaude — no ## Review is written and no plain
+// (non-security) review is ever run.
+func (s *checkoutExecutionStep) securityFlagMissingResult(err error) *agentlib.Result {
+	if !prompts.IsSecurityFlagMissing(err) {
+		return nil
+	}
+	glog.V(2).Infof(
+		"execution: coding plugin lacks --security contract — failing closed to human_review: %v",
+		err,
+	)
+	return &agentlib.Result{
+		Status:  agentlib.AgentStatusNeedsInput,
+		Message: fmt.Sprintf("execution step: %v", err),
+	}
 }
 
 // checkAllowlist returns a non-nil Result if the cloneURL is blocked by the
@@ -381,7 +407,7 @@ func (s *checkoutExecutionStep) postAndRoute(
 	// request-changes verdicts (model-authored reason) do NOT log.
 	if verdict.Verdict == VerdictRequestChanges && isFailClosedReason(verdict.Reason) {
 		glog.Warningf(
-			"pr-reviewer fail-closed to request-changes: reason=%q reviewBody_len=%d reviewBody_tail=%q",
+			"security-reviewer fail-closed to request-changes: reason=%q reviewBody_len=%d reviewBody_tail=%q",
 			verdict.Reason,
 			len(reviewBody),
 			lastChars(reviewBody, 300),

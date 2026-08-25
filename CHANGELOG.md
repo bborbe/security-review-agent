@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- feat: wire cmd/run-task to the security task-type dispatch so the local CLI runs the identical no-posting security flow as the Kafka entry
+- feat: thread the --security flag through the execution instructions and fail closed to human_review when the coding plugin lacks it
+- feat: adapt the pr-reviewer seed into the security-review agent — renamed module, agent identity, service name, and image to the security-review identity; docs updated to the security variant
+- feat: route security-review tasks to a no-posting security agent (nil poster + nil verifier) and drop the pr-review / pr-override routes
+- refactor: fail closed when RunAgent receives no pre-dispatched agent — remove the poster/verifier-wired fallback so GitHub-posting machinery can never be constructed by this agent
+
 ## v0.5.3
 
 - fix: key the `HasUnverifiedConcerns` fail-close on the concern's own blocker tiering (MUST-tier "must verify" / "will never fire" / "blocking" language, or a bare unexamined admission) instead of a benign-phrase whitelist — a benign "not verified (could not be cross-checked — source not in this repository)" note no longer demotes a clean `approve` to `CHANGES_REQUESTED` (port of github-pr-review-agent PR #24 / v0.6.3; false-request-changes recurrence 2026-08-24, bborbe/nuke#68)

@@ -13,10 +13,10 @@ import (
 	"syscall"
 
 	"github.com/bborbe/errors"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/bitbucket"
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
-	"github.com/bborbe/github-pr-review-agent/pkg/github"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/bitbucket"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/github"
 
 	prurl "github.com/bborbe/maintainer/prurl"
 )

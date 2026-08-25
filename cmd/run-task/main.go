@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Command run-task is the local-CLI entry point for maintainer-agent-pr-reviewer.
+// Command run-task is the local-CLI entry point for maintainer-agent-security-reviewer.
 //
 // Reads a markdown task file from disk, runs the agent against it, and
 // writes the updated content back to the same file. Mirrors the Kafka
@@ -18,9 +18,10 @@ import (
 	claudelib "github.com/bborbe/agent/claude"
 	"github.com/bborbe/cqrs/base"
 	"github.com/bborbe/errors"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/factory"
-	"github.com/bborbe/github-pr-review-agent/pkg/githubauth"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/factory"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/githubauth"
 	libsentry "github.com/bborbe/sentry"
 	"github.com/bborbe/service"
 	libtime "github.com/bborbe/time"
@@ -138,7 +139,19 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		return err
 	}
 	if a.SkipPost {
-		glog.V(2).Infof("pr-reviewer skip-post enabled — GitHub writes suppressed")
+		glog.V(2).Infof("security-reviewer skip-post enabled — GitHub writes suppressed")
+	}
+
+	agent, err := a.dispatchAgent(
+		ctx,
+		string(taskContent),
+		repoAllowlist,
+		resolvedToken,
+		reposPath,
+		workPath,
+	)
+	if err != nil {
+		return errors.Wrap(ctx, err, "task type dispatch")
 	}
 
 	authSetup := githubauth.NewNoopAuthSetup()
@@ -162,6 +175,7 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		Phase:                       a.Phase,
 		TaskContent:                 string(taskContent),
 		Deliverer:                   deliverer,
+		Agent:                       agent,
 		BotLogin:                    a.BotLogin,
 		SkipPost:                    a.SkipPost,
 	})
@@ -169,6 +183,74 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		return errors.Wrap(ctx, err, "agent run failed")
 	}
 	return agentlib.PrintResult(ctx, result)
+}
+
+// dispatchAgent resolves the agent for the task file's task_type via the
+// security dispatch table. A missing task_type defaults to the security-review
+// route (this binary is the security agent). A refused task_type (pr-review /
+// pr-override) returns the provider's unknown-task-type error — a mis-routed
+// task is never run as a plain review and never posted.
+func (a *application) dispatchAgent(
+	ctx context.Context,
+	taskContent string,
+	repoAllowlist []string,
+	resolvedToken string,
+	reposPath string,
+	workPath string,
+) (*agentlib.Agent, error) {
+	md, err := agentlib.ParseMarkdown(ctx, taskContent)
+	if err != nil {
+		return nil, errors.Wrapf(ctx, err, "parse task content")
+	}
+	taskType := md.Frontmatter.TaskType()
+	if taskType == "" {
+		taskType = prpkg.TaskTypeSecurityReview
+	}
+	env := map[string]string{}
+	if resolvedToken != "" {
+		env["GH_TOKEN"] = resolvedToken
+	}
+	if a.AnthropicBaseURL != "" {
+		env["ANTHROPIC_BASE_URL"] = a.AnthropicBaseURL
+	}
+	if a.AnthropicAuthToken != "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = a.AnthropicAuthToken
+	}
+	if a.AnthropicModel != "" {
+		env["ANTHROPIC_MODEL"] = a.AnthropicModel.String()
+	}
+	if a.AnthropicDefaultOpusModel != "" {
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = a.AnthropicDefaultOpusModel
+	}
+	if a.AnthropicDefaultSonnetModel != "" {
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = a.AnthropicDefaultSonnetModel
+	}
+	if a.AnthropicDefaultHaikuModel != "" {
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = a.AnthropicDefaultHaikuModel
+	}
+	if a.AnthropicDefaultFableModel != "" {
+		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = a.AnthropicDefaultFableModel
+	}
+	if a.BotLogin != "" {
+		env["BOT_GITHUB_LOGIN"] = a.BotLogin
+	}
+	repoManager := git.NewRepoManager(
+		git.WorkdirConfig{ReposPath: reposPath, WorkPath: workPath},
+		resolvedToken,
+	)
+	provider := factory.CreateAgentProvider(
+		a.ClaudeConfigDir,
+		a.AgentDir,
+		a.AnthropicModel,
+		resolvedToken,
+		env,
+		repoManager,
+		a.ReviewMode,
+		repoAllowlist,
+		libtime.NewCurrentDateTime(),
+		a.MaxReviewDuration,
+	)
+	return provider.Get(ctx, taskType)
 }
 
 // resolveAuth mints a GitHub App installation token and returns it. The token
@@ -181,7 +263,7 @@ func (a *application) resolveAuth(ctx context.Context) (string, error) {
 	if !useGitHubApp {
 		return "", errors.Errorf(
 			ctx,
-			"pr-reviewer auth: GitHub App credentials not configured — set APP_ID, INSTALLATION_ID, and PEM_KEY_FILE (or PEM_KEY)",
+			"security-reviewer auth: GitHub App credentials not configured — set APP_ID, INSTALLATION_ID, and PEM_KEY_FILE (or PEM_KEY)",
 		)
 	}
 	appCfg := githubapp.Config{AppID: a.AppID, InstallationID: a.InstallationID}
@@ -195,7 +277,7 @@ func (a *application) resolveAuth(ctx context.Context) (string, error) {
 		return "", errors.Wrap(ctx, err, "mint github app iat")
 	}
 	glog.V(2).Infof(
-		"pr-reviewer auth mode=github-app app_id=%d installation_id=%d",
+		"security-reviewer auth mode=github-app app_id=%d installation_id=%d",
 		a.AppID, a.InstallationID,
 	)
 	return iat, nil

@@ -8,7 +8,7 @@ import (
 	"errors"
 
 	claudelib "github.com/bborbe/agent/claude"
-	pkg "github.com/bborbe/github-pr-review-agent/pkg"
+	pkg "github.com/bborbe/security-review-agent/pkg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

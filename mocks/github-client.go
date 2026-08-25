@@ -8,8 +8,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/github"
+	"github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/github"
 )
 
 type GitHubClient struct {

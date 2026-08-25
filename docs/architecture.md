@@ -1,27 +1,27 @@
-# pr-reviewer Architecture
+# security-review-agent Architecture
 
-How this agent decides whether to approve or reject a pull request, and where each piece of that decision lives.
+How the security-review agent decides whether to approve or reject a pull request, and where each piece of that decision lives. The agent consumes `security-review` tasks, runs the coding security review (`/coding:pr-review --security`) against the target PR, writes findings + binary verdict into the task's `## Review` section, and never posts to GitHub.
 
 ## Three Phases
 
-A single PR review is split across three sequential phases. Each phase is a fresh Claude container with no memory of the prior one — context flows only through the task file body.
+A single security review is split across three sequential phases. Each phase is a fresh Claude container with no memory of the prior one — context flows only through the task file body.
 
 ```
 ┌──────────┐     ┌───────────┐     ┌──────────┐
 │ planning │ ──► │ execution │ ──► │ ai_review│
 └──────────┘     └───────────┘     └──────────┘
-   gh metadata    posts the review   sanity-checks
-   focus areas    + verdict          execution output
+   gh metadata    writes ## Review   sanity-checks
+   focus areas    (vault-first)      execution output
                   (THE verdict)      (meta-verdict)
 ```
 
 | Phase | Reads | Writes | Emits |
 |---|---|---|---|
 | **planning** | task body (PR URL) | `## Plan` section (focus areas, concerns) | `status: needs_input / failed / done` — no verdict |
-| **execution** | task body + `## Plan` | `## Review` section (vault-first); `## Diagnostics` block (posting outcome); posts review to GitHub via `PrPoster` | **the review verdict** (`approve` / `request-changes`); routes to `ai_review` on success or `human_review` on posting failure |
+| **execution** | task body + `## Plan` | `## Review` section (vault-first); `## Diagnostics` block (run outcome) | **the review verdict** (`approve` / `request-changes`); routes to `ai_review` — never posts to GitHub |
 | **ai_review** | `## Plan` + `## Review` | `## Verdict` section | **a meta-verdict** (`pass` / `fail`) judging whether execution did a good job |
 
-**Key distinction:** the execution-phase verdict is the actual PR review outcome posted back to GitHub. The ai_review-phase verdict is a separate sanity check — does the executor's output have hallucinations, did it address the planning concerns, is its verdict consistent with its own comments? `pass` allows the executor's verdict through; `fail` escalates to `human_review`.
+**Key distinction:** the execution-phase verdict is the actual review outcome — written to the vault `## Review`, never posted to the PR. The ai_review-phase verdict is a separate sanity check — does the executor's output have hallucinations, did it address the planning concerns, is its verdict consistent with its own comments? `pass` allows the executor's verdict through; `fail` escalates to `human_review`.
 
 The phases live in `pkg/prompts/`:
 
@@ -48,20 +48,27 @@ The execution phase emits the verdict as a JSON block at the end of its output. 
 
 The fallback exists because LLMs sometimes drop the JSON block under load or wrap it in unexpected markup. **Fail-closed default**: empty or unparseable text returns `request-changes`, never `approve` — a flaky agent run cannot silently green-light a PR.
 
+## The `--security` Invocation Contract
+
+The execution phase assembles the inlined `/coding:pr-review` procedure with `--security` passed through the pre-filled arguments, so the full security pipeline runs: **recon → security model → classifier → adjudicator → verifier → fail-closed toolchain/dependencies pass**. The review is a security review — not the general coding review.
+
+**Fail-closed on flag drift:** if the runtime-read plugin command file does not declare `--security`, the phase fails closed to `human_review` instead of running a non-security review. A security task must never silently degrade into a general review; the contract is enforced at the prompt/procedure level.
+
 ## ai_review's Consistency Check
 
-The ai_review phase reads both `## Plan` and `## Review` and runs four checks (`pkg/prompts/review_workflow.md`):
+The ai_review phase reads both `## Plan` and `## Review` and runs the consistency checks (`pkg/prompts/review_workflow.md`):
 
 1. **Concerns addressed** — every concern from `## Plan` either has a corresponding comment in `## Review` or appears in `concerns_addressed` as explicitly non-issue.
 2. **No hallucinations** — every comment in `## Review` cites a file + line that actually exists in `gh pr diff`.
 3. **Verdict consistency** — does the executor's verdict match the severity of its comments? `approve` with critical comments = inconsistent; `request-changes` with only nits = inconsistent.
-4. **Post verification** — after the LLM writes `## Verdict`, the step calls `ReviewVerifier.VerifyReview` (GET `/pulls/{n}/reviews`) to confirm the execution-phase review actually persisted on GitHub. If absent, the step returns `AgentStatusFailed` and appends a diagnostic line (`ai_review verify: ...`) to `## Diagnostics`. Verification is skipped when `## Review` is absent (no post was attempted) or when the last `## Diagnostics` YAML block contains `class: permanent` or `class: unknown` (retry would not help). A `nil` verifier disables the check for local/test runs.
 
-ai_review's purpose is catching the case where execution rubber-stamped its own reasoning. Its `pass` / `fail` is meta — a green light to trust the executor's verdict, not a verdict on the PR itself.
+ai_review writes `## Verdict` from these checks. Because the agent never posts, there is **no GitHub post-verification** step and no hallucination dismissal (nothing was posted to dismiss). Its `pass` / `fail` is meta — a green light to trust the executor's verdict, not a verdict on the PR itself.
 
-## Posting Reviews Back to GitHub
+## No GitHub Posting
 
-After Claude writes `## Review`, the execution phase calls `PrPoster.Post` to submit the verdict as a GitHub review. The full posting contract — vault-first invariant, diagnostic block format, failure routing, and `nil`-poster backward-compatibility mode — is documented in [`docs/pr-post-back.md`](pr-post-back.md).
+The security-review agent wires a **nil poster and a nil verifier**. The execution phase writes `## Review` to the vault (vault-first) and routes to `ai_review` — there is no `PrPoster.Post` call and no verify-after-POST step. The run ends at the `## Review` write-back; nothing is written to any GitHub PR. Clones are throwaway scratch dirs at the PR head, cleaned up after the run, and `REPO_ALLOWLIST` is still honored — a PR outside the allowlist is refused, never reviewed.
+
+The pr-reviewer posting contract (vault-first invariant, diagnostic block format, failure routing, dismissal) is retained as historical documentation in [`docs/pr-post-back.md`](pr-post-back.md) — it describes the pr-reviewer lineage, not the security agent's live behavior.
 
 ## Result Delivery
 
@@ -74,15 +81,15 @@ The Kafka contract is `{"status":"done|needs_input|failed","message":"..."}`. Ot
 ## File Map
 
 ```
-agent/pr-reviewer/
+agent/security-reviewer/
 ├── main.go                          k8s Job entry: read TASK_CONTENT → run phase → publish Kafka result
 ├── cmd/run-task/                    local CLI for the same flow against a task markdown file
-├── cmd/cli/                         legacy single-shot CLI: PR URL → worktree → Claude → posts comment
+├── cmd/cli/                         legacy single-shot CLI (pr-reviewer lineage): PR URL → worktree → Claude → comment
 ├── pkg/
 │   ├── verdict.go                   JSON-line parser + heuristic fallback (the rubric, in code)
 │   ├── verdict_test.go              Ginkgo/Gomega coverage of every parser branch
 │   ├── prompts/
-│   │   ├── execution.go             SOURCE OF TRUTH for the verdict rubric (Go string the LLM reads)
+│   │   ├── execution.go             SOURCE OF TRUTH for the verdict rubric (Go string the LLM reads; security-rubric source of truth)
 │   │   ├── execution_output-format.md   JSON schema constraining the verdict value
 │   │   ├── planning_workflow.md     planning-phase instructions
 │   │   ├── planning_output-format.md

@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/bborbe/errors"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
 )
 
 // PRBranches holds the source and target branch names of a pull request.

@@ -30,7 +30,7 @@ generate-dummy-task:
 	@echo 'status: in_progress' >> $(TASK_FILE)
 	@echo 'phase: in_progress' >> $(TASK_FILE)
 	@echo 'title: PR Review Smoke Test' >> $(TASK_FILE)
-	@echo 'assignee: pr-reviewer-agent' >> $(TASK_FILE)
+	@echo 'assignee: security-reviewer-agent' >> $(TASK_FILE)
 	@echo 'task_identifier: $(TASK_ID)' >> $(TASK_FILE)
 	@echo 'clone_url: $(CLONE_URL)' >> $(TASK_FILE)
 	@echo 'ref: $(REF)' >> $(TASK_FILE)

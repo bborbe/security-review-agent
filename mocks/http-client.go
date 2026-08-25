@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/bborbe/github-pr-review-agent/pkg/githubposter"
+	"github.com/bborbe/security-review-agent/pkg/githubposter"
 )
 
 type HTTPClient struct {
