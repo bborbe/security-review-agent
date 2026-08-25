@@ -22,10 +22,12 @@ var executionOutputFormat string
 
 const prefilledArgsHeaderTemplate = "## Pre-filled arguments\n\n" +
 	"The procedure below describes a `/coding:pr-review` slash command that takes\n" +
-	"`<target-branch>` and a mode argument. Those arguments have already been\n" +
-	"resolved for this run — do NOT prompt for them, do NOT re-derive them:\n\n" +
+	"`<target-branch>`, a mode argument, and the `--security` security-review flag.\n" +
+	"Those arguments have already been resolved for this run — do NOT prompt for\n" +
+	"them, do NOT re-derive them:\n\n" +
 	"- **TARGET_BRANCH**: %s\n" +
 	"- **mode**: %s\n" +
+	"- **--security**: enabled — run the full security pipeline (recon → derived security model → classifier → adjudicator → verifier → fail-closed toolchain/dependencies pass)\n" +
 	"- **Working directory**: your cwd is already the cloned worktree at the PR head — " +
 	"run plain `git` from it, never `git -C <path>`; `git -C` is not needed.\n\n" +
 	"Now follow the procedure below as if the slash command had been invoked with\n" +
@@ -168,6 +170,18 @@ func BuildExecutionInstructions(
 		return nil, errors.Wrapf(ctx, err, "read plugin command file path=%s", pluginPath)
 	}
 
+	// Fail closed: the runtime-read /coding:pr-review command file MUST declare
+	// the --security flag — the execution contract of this agent. A plugin
+	// version that dropped the flag (below v0.49.0) would silently run a plain,
+	// non-security review, so assembly refuses instead of downgrading.
+	if !strings.Contains(string(raw), "--security") {
+		return nil, errors.Errorf(
+			ctx,
+			"coding plugin command file path=%s does not declare --security (required for security review); plugin version < v0.49.0",
+			pluginPath,
+		)
+	}
+
 	pluginRoot := filepath.Join(
 		string(claudeConfigDir),
 		"plugins",
@@ -203,4 +217,18 @@ func stripFrontmatter(s string) string {
 		return s
 	}
 	return rest[end+len("\n"+delim):]
+}
+
+// missingSecurityFlagSubstring is the error-message fragment emitted when the
+// runtime-read /coding:pr-review command file does not declare --security.
+const missingSecurityFlagSubstring = "--security"
+
+// IsSecurityFlagMissing reports whether err is the fail-closed
+// missing-`--security` assembly error. Returns false for nil. Mirrors
+// git.IsGitAuthFailure's substring matcher (pkg/git/auth_failure.go).
+func IsSecurityFlagMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), missingSecurityFlagSubstring)
 }

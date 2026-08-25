@@ -7,7 +7,7 @@ package git_test
 import (
 	"errors"
 
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/git"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

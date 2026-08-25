@@ -7,7 +7,7 @@ package pkg_test
 import (
 	"strings"
 
-	pkg "github.com/bborbe/github-pr-review-agent/pkg"
+	pkg "github.com/bborbe/security-review-agent/pkg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -638,6 +638,22 @@ None.
 		It("returns VerdictRequestChanges from heuristic must-fix items", func() {
 			Expect(result.Verdict).To(Equal(pkg.VerdictRequestChanges))
 			Expect(result.Reason).To(Equal("no verdict block"))
+		})
+	})
+
+	Context("security review ## Review body", func() {
+		It("parses a Must Fix finding with the binary verdict JSON to request-changes", func() {
+			body := "#### Must Fix\n- [pkg/auth.go:42] hardcoded credential in env fallback\n\n```json\n" +
+				`{"verdict":"request-changes","reason":"Must Fix finding"}` +
+				"\n```\n"
+			result := pkg.ParseVerdict(body)
+			Expect(result.Verdict).To(Equal(pkg.VerdictRequestChanges))
+		})
+
+		It("fail-closes an empty ## Review body to request-changes", func() {
+			result := pkg.ParseVerdict("")
+			Expect(result.Verdict).To(Equal(pkg.VerdictRequestChanges))
+			Expect(result.Reason).To(Equal("empty review text"))
 		})
 	})
 })

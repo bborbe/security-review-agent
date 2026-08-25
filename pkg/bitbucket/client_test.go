@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/bborbe/github-pr-review-agent/pkg/bitbucket"
+	"github.com/bborbe/security-review-agent/pkg/bitbucket"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

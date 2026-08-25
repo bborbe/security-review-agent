@@ -10,9 +10,9 @@ import (
 	agentlib "github.com/bborbe/agent"
 	claudelib "github.com/bborbe/agent/claude"
 	"github.com/bborbe/errors"
-	prpkg "github.com/bborbe/github-pr-review-agent/pkg"
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
-	"github.com/bborbe/github-pr-review-agent/pkg/githubauth"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/githubauth"
 	libtime "github.com/bborbe/time"
 	"github.com/bborbe/vault-cli/pkg/domain"
 	"github.com/golang/glog"
@@ -52,8 +52,8 @@ type RunConfig struct {
 	// picks it up instead of the DefaultBotLogin fallback.
 	BotLogin string
 	// Agent overrides the agent used for execution. If nil, CreateAgent is called.
-	// Set by main.go after dispatching via CreateAgentProvider. cmd/run-task leaves
-	// this nil so CreateAgent is used for backward compatibility.
+	// Set by main.go and cmd/run-task after dispatching via CreateAgentProvider,
+	// which resolves the task's task_type through the security dispatch table.
 	Agent *agentlib.Agent
 	// CurrentDateTime is the time source injected into step structs and poster/verifier.
 	CurrentDateTime libtime.CurrentDateTimeGetter
@@ -75,7 +75,7 @@ func ResolvePosters(cfg RunConfig, botLogin string) (prpkg.PrPoster, prpkg.Revie
 	return poster, verifier
 }
 
-// RunAgent performs the shared startup + execution flow for the maintainer-agent-pr-reviewer binary.
+// RunAgent performs the shared startup + execution flow for the maintainer-agent-security-reviewer binary.
 // Both entry points (Kafka pod main.go and local CLI cmd/run-task) call this after
 // resolving their I/O specifics — task content source and result deliverer.
 //
@@ -104,53 +104,13 @@ func RunAgent(ctx context.Context, cfg RunConfig) (*agentlib.Result, error) {
 		return nil, deliverStartupFailure(ctx, cfg.Deliverer, err, "github auth setup failed")
 	}
 
-	env := map[string]string{}
-	if cfg.GHToken != "" {
-		env["GH_TOKEN"] = cfg.GHToken
-	}
-	if cfg.AnthropicBaseURL != "" {
-		env["ANTHROPIC_BASE_URL"] = cfg.AnthropicBaseURL
-	}
-	if cfg.AnthropicAuthToken != "" {
-		env["ANTHROPIC_AUTH_TOKEN"] = cfg.AnthropicAuthToken
-	}
-	if cfg.Model != "" {
-		env["ANTHROPIC_MODEL"] = cfg.Model.String()
-	}
-	if cfg.AnthropicDefaultOpusModel != "" {
-		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = cfg.AnthropicDefaultOpusModel
-	}
-	if cfg.AnthropicDefaultSonnetModel != "" {
-		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = cfg.AnthropicDefaultSonnetModel
-	}
-	if cfg.AnthropicDefaultHaikuModel != "" {
-		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = cfg.AnthropicDefaultHaikuModel
-	}
-	if cfg.AnthropicDefaultFableModel != "" {
-		env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = cfg.AnthropicDefaultFableModel
-	}
-	if cfg.BotLogin != "" {
-		env["BOT_GITHUB_LOGIN"] = cfg.BotLogin
-	}
-
+	// The security agent's dispatch table (main.go and cmd/run-task dispatchAgent)
+	// always supplies a pre-dispatched agent. Fail closed if one is missing:
+	// rebuilding a poster/verifier-wired fallback agent here would re-introduce the
+	// GitHub-posting machinery this agent must never construct (spec non-goal).
 	agent := cfg.Agent
 	if agent == nil {
-		botLogin := ResolveBotLogin(env)
-		poster, verifier := ResolvePosters(cfg, botLogin)
-		agent = CreateAgent(
-			cfg.ClaudeConfigDir,
-			cfg.AgentDir,
-			cfg.Model,
-			cfg.GHToken,
-			env,
-			repoManager,
-			cfg.ReviewMode,
-			cfg.RepoAllowlist,
-			poster,
-			verifier,
-			cfg.CurrentDateTime,
-			cfg.MaxReviewDuration,
-		)
+		return nil, errors.New(ctx, "no agent dispatched: RunAgent requires a pre-dispatched agent from the security dispatch table; refusing to build a poster/verifier-wired fallback agent")
 	}
 	return agent.Run(ctx, cfg.Phase, cfg.TaskContent, cfg.Deliverer)
 }

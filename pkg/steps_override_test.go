@@ -8,8 +8,8 @@ import (
 	"context"
 
 	agentlib "github.com/bborbe/agent"
-	"github.com/bborbe/github-pr-review-agent/mocks"
-	pkg "github.com/bborbe/github-pr-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/mocks"
+	pkg "github.com/bborbe/security-review-agent/pkg"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

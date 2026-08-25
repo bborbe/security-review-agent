@@ -14,10 +14,11 @@ import (
 	agentlib "github.com/bborbe/agent"
 	claudelib "github.com/bborbe/agent/claude"
 	"github.com/bborbe/agent/delivery"
-	"github.com/bborbe/github-pr-review-agent/pkg/factory"
-	"github.com/bborbe/github-pr-review-agent/pkg/git"
-	"github.com/bborbe/github-pr-review-agent/pkg/githubauth"
 	libkafkamocks "github.com/bborbe/kafka/mocks"
+	prpkg "github.com/bborbe/security-review-agent/pkg"
+	"github.com/bborbe/security-review-agent/pkg/factory"
+	"github.com/bborbe/security-review-agent/pkg/git"
+	"github.com/bborbe/security-review-agent/pkg/githubauth"
 	libtime "github.com/bborbe/time"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -318,8 +319,8 @@ var _ = Describe("Factory", func() {
 			Expect(provider).NotTo(BeNil())
 		})
 
-		It("returns a non-nil agent for pr-review task type", func() {
-			agent, err := provider.Get(ctx, agentlib.TaskTypePRReview)
+		It("returns a non-nil agent for security-review task type", func() {
+			agent, err := provider.Get(ctx, prpkg.TaskTypeSecurityReview)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(agent).NotTo(BeNil())
 		})
@@ -330,13 +331,25 @@ var _ = Describe("Factory", func() {
 			Expect(agent).NotTo(BeNil())
 		})
 
+		It("refuses the pr-review task type (never run as a plain review)", func() {
+			agent, err := provider.Get(ctx, agentlib.TaskTypePRReview)
+			Expect(err).To(HaveOccurred())
+			Expect(agent).To(BeNil())
+		})
+
+		It("refuses the pr-override task type", func() {
+			agent, err := provider.Get(ctx, prpkg.TaskTypePROverride)
+			Expect(err).To(HaveOccurred())
+			Expect(agent).To(BeNil())
+		})
+
 		It("returns an error naming the bogus value and both accepted task types", func() {
 			agent, err := provider.Get(ctx, agentlib.TaskType("bogus"))
 			Expect(err).To(HaveOccurred())
 			Expect(agent).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("unknown task_type"))
 			Expect(err.Error()).To(ContainSubstring("bogus"))
-			Expect(err.Error()).To(ContainSubstring("pr-review"))
+			Expect(err.Error()).To(ContainSubstring("security-review"))
 			Expect(err.Error()).To(ContainSubstring("healthcheck"))
 		})
 	})
