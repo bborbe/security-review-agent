@@ -110,7 +110,10 @@ func RunAgent(ctx context.Context, cfg RunConfig) (*agentlib.Result, error) {
 	// GitHub-posting machinery this agent must never construct (spec non-goal).
 	agent := cfg.Agent
 	if agent == nil {
-		return nil, errors.New(ctx, "no agent dispatched: RunAgent requires a pre-dispatched agent from the security dispatch table; refusing to build a poster/verifier-wired fallback agent")
+		return nil, errors.New(
+			ctx,
+			"no agent dispatched: RunAgent requires a pre-dispatched agent from the security dispatch table; refusing to build a poster/verifier-wired fallback agent",
+		)
 	}
 	return agent.Run(ctx, cfg.Phase, cfg.TaskContent, cfg.Deliverer)
 }
