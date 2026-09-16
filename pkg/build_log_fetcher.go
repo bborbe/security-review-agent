@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -61,11 +62,43 @@ const cloudBuildScope = "https://www.googleapis.com/auth/cloud-platform"
 // object from the build's logs bucket.
 const storageReadScope = "https://www.googleapis.com/auth/devstorage.read_only"
 
+// gcpKeyJSONEnvVar is the environment variable carrying the GCP
+// service-account key JSON. The fleet passes the key as an env var, never as
+// a file, so no temp file and no GOOGLE_APPLICATION_CREDENTIALS dance.
+const gcpKeyJSONEnvVar = "GCP_KEY_JSON"
+
+// credentialsFromEnv returns the token source for the Cloud Build and Cloud
+// Storage calls: built from the service-account key in gcpKeyJSONEnvVar when
+// it is set, otherwise resolved through the Application Default Credentials
+// chain (the documented local/dev path). Reading the environment variable is
+// the only I/O — no file, no temp file, no subprocess, and no network call at
+// construction time (CredentialsFromJSON returns a lazily-refreshing source).
+func credentialsFromEnv(ctx context.Context) (oauth2.TokenSource, error) {
+	if keyJSON := os.Getenv(gcpKeyJSONEnvVar); keyJSON != "" {
+		creds, err := google.CredentialsFromJSON(
+			ctx, []byte(keyJSON), cloudBuildScope, storageReadScope,
+		)
+		if err != nil {
+			return nil, errors.Wrapf(ctx, err, "parse %s service-account key", gcpKeyJSONEnvVar)
+		}
+		glog.V(2).Infof("build-fix: credentials resolved from %s", gcpKeyJSONEnvVar)
+		return creds.TokenSource, nil
+	}
+
+	resolved, err := google.DefaultTokenSource(ctx, cloudBuildScope, storageReadScope)
+	if err != nil {
+		return nil, errors.Wrap(ctx, err, "resolve google application default credentials")
+	}
+	glog.V(2).Infof("build-fix: credentials resolved from Application Default Credentials")
+	return resolved, nil
+}
+
 // cloudBuildLogFetcher reads a Cloud Build's log through the Cloud Build REST
 // API plus the Cloud Storage JSON API, authenticating with a bearer token from
-// Application Default Credentials (or an injected token source in tests). No
-// Google API client library and no gcloud subprocess — plain net/http so the
-// fetch is unit-testable.
+// the GCP_KEY_JSON service-account key, falling back to Application Default
+// Credentials when that env var is unset (or an injected token source in
+// tests). No Google API client library and no gcloud subprocess — plain
+// net/http so the fetch is unit-testable.
 type cloudBuildLogFetcher struct {
 	cloudBuildBaseURL string
 	storageBaseURL    string
@@ -74,16 +107,19 @@ type cloudBuildLogFetcher struct {
 }
 
 // NewCloudBuildLogFetcher returns the production fetcher, authenticating with
-// Google Application Default Credentials. It performs no I/O and returns no
-// error, so factory composition stays pure; ADC is resolved lazily inside
-// FetchLog so a credential problem surfaces as a runtime result.
+// the GCP_KEY_JSON service-account key and falling back to Google Application
+// Default Credentials when that env var is unset. It performs no I/O and
+// returns no error, so factory composition stays pure; credentials are
+// resolved lazily inside FetchLog so a credential problem surfaces as a
+// runtime result.
 func NewCloudBuildLogFetcher() BuildLogFetcher {
 	return newCloudBuildLogFetcher(cloudBuildAPIBaseURL, storageAPIBaseURL, nil)
 }
 
 // newCloudBuildLogFetcher is the concrete constructor — exposed for tests
 // (export_test.go) so they can point it at httptest servers and a static token.
-// A nil tokenSource means "resolve ADC from the context on each FetchLog".
+// A nil tokenSource means "resolve GCP_KEY_JSON / ADC from the environment on
+// each FetchLog".
 func newCloudBuildLogFetcher(
 	cloudBuildBaseURL, storageBaseURL string,
 	tokenSource oauth2.TokenSource,
@@ -129,14 +165,15 @@ func (f *cloudBuildLogFetcher) FetchLog(ctx context.Context, ref BuildRef) (stri
 	return f.fetchLogObject(ctx, ref.BuildID, bucket, token)
 }
 
-// accessToken resolves the token source (injected or ADC) and mints a bearer
-// token from it.
+// accessToken resolves the token source (injected, GCP_KEY_JSON, or ADC) and
+// mints a bearer token from it. A non-nil injected source is used directly —
+// credentialsFromEnv is not consulted.
 func (f *cloudBuildLogFetcher) accessToken(ctx context.Context) (*oauth2.Token, error) {
 	tokenSource := f.tokenSource
 	if tokenSource == nil {
-		resolved, err := google.DefaultTokenSource(ctx, cloudBuildScope, storageReadScope)
+		resolved, err := credentialsFromEnv(ctx)
 		if err != nil {
-			return nil, errors.Wrap(ctx, err, "resolve google application default credentials")
+			return nil, err
 		}
 		tokenSource = resolved
 	}

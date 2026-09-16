@@ -87,9 +87,11 @@ deliberately **not** registered — a task mis-routed here is refused by the
 provider's unknown-task-type rejection.
 
 The step (`pkg/steps_build_fix.go`) reads the build log over the Cloud Build REST
-API (`pkg/build_log_fetcher.go` — plain `net/http` with an ADC bearer token, no
-Google API client and no `gcloud` subprocess, so it is unit-testable against
-`httptest`), extracts the failure cause, writes `## Failure Analysis`, clears the
+API (`pkg/build_log_fetcher.go` — plain `net/http` with a bearer token minted
+from the `GCP_KEY_JSON` service-account key, falling back to Application Default
+Credentials when it is unset, no Google API client and no `gcloud` subprocess, so
+it is unit-testable against `httptest`), extracts the failure cause, writes
+`## Failure Analysis`, clears the
 `assignee`, and routes to `human_review`. It never advances to `done`, never
 modifies code, and never files a second task.
 

@@ -42,11 +42,13 @@ and stops. There is no Claude runner and no clone on this path.
 How the log is fetched:
 
 1. `GET /v1/projects/{project}/locations/{region}/builds/{build_id}` on the Cloud
-   Build REST API, authenticated with an Application Default Credentials bearer
-   token (scope `cloud-platform` — the only scope Cloud Build accepts — plus
-   `devstorage.read_only`). Read-only-ness is enforced by the runtime identity's
-   two IAM grants (`roles/cloudbuild.builds.viewer` and
-   `roles/storage.objectViewer`), never by an editor/owner role.
+   Build REST API, authenticated with a bearer token minted from the
+   `GCP_KEY_JSON` service-account key when that env var is set, falling back to
+   Application Default Credentials when it is unset (scope `cloud-platform` —
+   the only scope Cloud Build accepts — plus `devstorage.read_only`).
+   Read-only-ness is enforced by the runtime identity's two IAM grants
+   (`roles/cloudbuild.builds.viewer` and `roles/storage.objectViewer`), never by
+   an editor/owner role.
 2. `GET /storage/v1/b/{logsBucket}/o/log-{build_id}.txt?alt=media` for the log
    object itself.
 
@@ -85,6 +87,7 @@ Env-driven (Kubernetes) — key variables:
 | `REVIEW_MAX_DURATION` | Soft time budget per Claude phase run (default `25m`, floor `60s`); an overrun routes the phase to `human_review` with a budget-naming message and salvages any streamed partial into the task's `## Salvage` section (never a retry, never posted to GitHub); keep below the K8s Job `ActiveDeadlineSeconds` |
 | `CLOUD_BUILD_PROJECT` | GCP project holding the Cloud Build history read by `build-fix` tasks (default `smedia-brogrammers`) |
 | `CLOUD_BUILD_REGION` | GCP region holding the Cloud Build history read by `build-fix` tasks (default `europe-west3`) |
+| `GCP_KEY_JSON` | GCP service-account key JSON used to read Cloud Build logs and log objects for `build-fix` tasks; when unset, Application Default Credentials are used |
 
 `REPO_ALLOWLIST` is honored — a PR outside the allowlist is refused, never
 reviewed. Clones are throwaway scratch dirs at the PR head; there is no code

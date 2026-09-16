@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- fix: resolve the build-fix Cloud Build token from the `GCP_KEY_JSON` service-account key when it is set and fall back to Application Default Credentials only when it is unset — the pod no longer authenticates as the broad node service account. Accepting any credential type present in the env var (`google.CredentialsFromJSON` rather than a type-pinned variant) is a deliberate tradeoff, not an oversight.
 - feat: add a build-fix task type that reads the failed Cloud Build log over the Cloud Build REST API, extracts the failure cause, and enriches the task in place with the analysis while unassigning it for a human (analysis only — no auto-fix)
 
 ## v0.6.3

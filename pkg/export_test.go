@@ -31,6 +31,12 @@ func NewCloudBuildLogFetcherForTest(
 	return newCloudBuildLogFetcher(cloudBuildBaseURL, storageBaseURL, tokenSource)
 }
 
+// CredentialsFromEnvForTest exposes credentialsFromEnv so pkg_test can assert
+// the env-var / ADC branch selection without a real service-account key.
+func CredentialsFromEnvForTest(ctx context.Context) (oauth2.TokenSource, error) {
+	return credentialsFromEnv(ctx)
+}
+
 // ShouldVerifyPostForTest exposes reviewStep.shouldVerifyPost for unit testing
 // without exposing it to production callers.
 func ShouldVerifyPostForTest(ctx context.Context, md *agentlib.Markdown) (bool, error) {

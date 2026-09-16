@@ -43,6 +43,21 @@ func (s *apiStub) close() { s.server.Close() }
 
 func (s *apiStub) count() int { return len(s.requests) }
 
+// restoreEnv registers a DeferCleanup that puts name back to the value it held
+// when restoreEnv was called — unsetting it when it was absent — so every spec
+// that mutates the environment stays hermetic and order-independent. Call it
+// BEFORE mutating the variable.
+func restoreEnv(name string) {
+	original, present := os.LookupEnv(name)
+	DeferCleanup(func() {
+		if present {
+			_ = os.Setenv(name, original)
+			return
+		}
+		_ = os.Unsetenv(name)
+	})
+}
+
 var _ = Describe("cloudBuildLogFetcher", func() {
 	const (
 		buildID = "88027472-8599-454f-8112-569739235dad"
@@ -72,6 +87,10 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 	})
 
 	It("surfaces a credential problem as a runtime error, not a boot failure", func() {
+		// Unset GCP_KEY_JSON explicitly so an ambient value can never divert
+		// this spec off the ADC branch it is asserting on.
+		restoreEnv("GCP_KEY_JSON")
+		_ = os.Unsetenv("GCP_KEY_JSON")
 		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json")
 		DeferCleanup(func() { _ = os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS") })
 
@@ -79,7 +98,31 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 		log, err := fetcher.FetchLog(ctx, ref)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("application default credentials"))
+		Expect(err.Error()).NotTo(ContainSubstring("GCP_KEY_JSON"))
 		Expect(log).To(BeEmpty())
+	})
+
+	It("fails on a malformed GCP_KEY_JSON before any HTTP call", func() {
+		restoreEnv("GCP_KEY_JSON")
+		os.Setenv("GCP_KEY_JSON", "not-json")
+		DeferCleanup(func() { _ = os.Unsetenv("GCP_KEY_JSON") })
+
+		buildStub := newAPIStub(http.StatusOK, "unused")
+		storageStub := newAPIStub(http.StatusOK, "unused")
+		DeferCleanup(buildStub.close)
+		DeferCleanup(storageStub.close)
+
+		// A nil token source is the documented "resolve from the environment" case.
+		fetcher := pkg.NewCloudBuildLogFetcherForTest(
+			buildStub.server.URL, storageStub.server.URL, nil,
+		)
+
+		log, err := fetcher.FetchLog(ctx, ref)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("GCP_KEY_JSON"))
+		Expect(log).To(BeEmpty())
+		Expect(buildStub.count()).To(Equal(0))
+		Expect(storageStub.count()).To(Equal(0))
 	})
 
 	Context("when the build is bucket-addressable", func() {
@@ -236,5 +279,56 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 			Expect(build.count()).To(Equal(0))
 			Expect(storage.count()).To(Equal(0))
 		})
+	})
+})
+
+var _ = Describe("credentialsFromEnv", func() {
+	var ctx context.Context
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	// Every spec sets or unsets BOTH variables explicitly so none of them
+	// depends on the ambient environment.
+	It("uses the GCP_KEY_JSON key when it is set", func() {
+		restoreEnv("GCP_KEY_JSON")
+		restoreEnv("GOOGLE_APPLICATION_CREDENTIALS")
+		os.Setenv(
+			"GCP_KEY_JSON",
+			`{"type":"authorized_user","client_id":"test-client","refresh_token":"test-refresh"}`,
+		)
+		_ = os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+		tokenSource, err := pkg.CredentialsFromEnvForTest(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tokenSource).NotTo(BeNil())
+	})
+
+	It("fails on a malformed key instead of silently falling back to ADC", func() {
+		restoreEnv("GCP_KEY_JSON")
+		restoreEnv("GOOGLE_APPLICATION_CREDENTIALS")
+		os.Setenv("GCP_KEY_JSON", "not-json")
+		// This path makes the ADC branch fail with its own distinctive message,
+		// so a silent fallback would be visible in the error text.
+		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json")
+
+		tokenSource, err := pkg.CredentialsFromEnvForTest(ctx)
+		Expect(err).To(HaveOccurred())
+		Expect(tokenSource).To(BeNil())
+		Expect(err.Error()).To(ContainSubstring("GCP_KEY_JSON"))
+		Expect(err.Error()).NotTo(ContainSubstring("application default credentials"))
+	})
+
+	It("falls back to Application Default Credentials when the env var is unset", func() {
+		restoreEnv("GCP_KEY_JSON")
+		restoreEnv("GOOGLE_APPLICATION_CREDENTIALS")
+		_ = os.Unsetenv("GCP_KEY_JSON")
+		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json")
+
+		tokenSource, err := pkg.CredentialsFromEnvForTest(ctx)
+		Expect(err).To(HaveOccurred())
+		Expect(tokenSource).To(BeNil())
+		Expect(err.Error()).To(ContainSubstring("application default credentials"))
 	})
 })
