@@ -70,6 +70,38 @@ The security-review agent wires a **nil poster and a nil verifier**. The executi
 
 The pr-reviewer posting contract (vault-first invariant, diagnostic block format, failure routing, dismissal) is retained as historical documentation in [`docs/pr-post-back.md`](pr-post-back.md) — it describes the pr-reviewer lineage, not the security agent's live behavior.
 
+## The `build-fix` Task Type
+
+The binary dispatches on `task_type`, not on the phase name. Three routes exist:
+
+| `task_type` | Agent | Shape |
+|---|---|---|
+| `security-review` | 3-phase security agent (planning → execution → ai_review) | Claude, clone, no posting |
+| `healthcheck` | liveness agent | single Claude step |
+| `build-fix` | single code-only step under `execution` | **no Claude, no clone** |
+
+`build-fix` is the second half of the two-agent build-failure chain: the
+google-cloud-build-watcher files the task (with `build_id`), this agent explains
+why the build broke, and a human fixes it. `pr-review` and `pr-override` are
+deliberately **not** registered — a task mis-routed here is refused by the
+provider's unknown-task-type rejection.
+
+The step (`pkg/steps_build_fix.go`) reads the build log over the Cloud Build REST
+API (`pkg/build_log_fetcher.go` — plain `net/http` with a bearer token minted
+from the `GCP_KEY_JSON` service-account key, falling back to Application Default
+Credentials when it is unset, no Google API client and no `gcloud` subprocess, so
+it is unit-testable against `httptest`), extracts the failure cause, writes
+`## Failure Analysis`, clears the
+`assignee`, and routes to `human_review`. It never advances to `done`, never
+modifies code, and never files a second task.
+
+`ExtractFailureCause` anchors on the **last** error-marked line: a build log
+carries many earlier error-shaped lines (retried steps, a probe's `exit status 1`)
+before the fatal one, so the first match reports the wrong cause. Excerpt lines
+with a leading `#` are escaped with a space — `agentlib.ParseMarkdown` treats any
+line beginning with `# ` or `## ` as a heading regardless of fences, and a Go/cgo
+build log legitimately contains `# github.com/foo/bar` lines.
+
 ## Result Delivery
 
 The task file mutates in place across phases. The k8s Job entry (`main.go`) reads `TASK_CONTENT`, runs the appropriate phase based on the `phase:` frontmatter field, mutates the task body, and publishes a status update to Kafka (`master-agent-task-v1-request`). The result-deliverer (`pkg/factory/`) handles the publish.
