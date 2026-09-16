@@ -19,13 +19,16 @@ require (
 	github.com/bborbe/time v1.27.14
 	github.com/bborbe/vault-cli v0.123.0
 	github.com/golang/glog v1.2.5
+	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.43.0
 	github.com/prometheus/client_golang v1.24.1
+	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/IBM/sarama v1.60.2 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/bborbe/collection v1.20.26 // indirect
@@ -70,7 +73,6 @@ require (
 	github.com/google/go-github/v88 v88.0.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20260903180319-d6c3cb2f37ec // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
@@ -98,7 +100,6 @@ require (
 	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect

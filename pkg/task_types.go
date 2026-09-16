@@ -11,3 +11,10 @@ import agentlib "github.com/bborbe/agent"
 // with no GitHub posting (nil poster + nil verifier); the run ends at the
 // ## Review write-back.
 const TaskTypeSecurityReview agentlib.TaskType = "security-review"
+
+// TaskTypeBuildFix is the task type for failed Cloud Build analysis tasks.
+// The google-cloud-build-watcher emits it (as a plain string) for every
+// failed master build; the agent routes it to the code-only build-fix step,
+// which reads the build log, extracts the failure cause, and enriches the
+// task in place. No Claude, no clone, no auto-fix.
+const TaskTypeBuildFix agentlib.TaskType = "build-fix"

@@ -217,9 +217,13 @@ func CreateAgent(
 // maintainer-agent-security-reviewer. TaskTypeSecurityReview routes to the
 // 3-phase security agent built by CreateAgent with nil poster + nil verifier
 // (no GitHub posting — the run ends at the ## Review write-back).
-// TaskTypeHealthcheck routes to the liveness agent. pr-review and pr-override
-// are deliberately NOT registered: a task mis-routed to this binary is refused
-// by the unknown-task-type rejection and never run as a plain review.
+// TaskTypeHealthcheck routes to the liveness agent. TaskTypeBuildFix routes to
+// the single-phase code-only build-fix agent, which reads the failed Cloud
+// Build's log over the Cloud Build REST API, writes the failure analysis into
+// the task in place, and unassigns it for a human — analysis only, no Claude,
+// no clone, no auto-fix. pr-review and pr-override are deliberately NOT
+// registered: a task mis-routed to this binary is refused by the
+// unknown-task-type rejection and never run as a plain review.
 // Pure plumbing; no conditional, no error.
 func CreateAgentProvider(
 	claudeConfigDir claudelib.ClaudeConfigDir,
@@ -232,6 +236,8 @@ func CreateAgentProvider(
 	repoAllowlist []string,
 	currentDateTime libtime.CurrentDateTimeGetter,
 	maxDuration libtime.Duration,
+	cloudBuildProject string,
+	cloudBuildRegion string,
 ) agentlib.AgentProvider {
 	domainAgent := CreateAgent(
 		claudeConfigDir,
@@ -255,9 +261,16 @@ func CreateAgentProvider(
 		claudelib.AllowedTools{},
 	)
 	livenessAgent := healthcheck.NewAgent(healthcheck.NewClaudeStep(healthcheckRunner))
+	buildFixAgent := agentlib.NewAgent(
+		agentlib.NewPhase(
+			domain.TaskPhaseExecution,
+			prpkg.NewBuildFixStep(cloudBuildProject, cloudBuildRegion),
+		),
+	)
 	return agentlib.NewAgentProvider(serviceName, map[agentlib.TaskType]*agentlib.Agent{
 		prpkg.TaskTypeSecurityReview: domainAgent,
 		agentlib.TaskTypeHealthcheck: livenessAgent,
+		prpkg.TaskTypeBuildFix:       buildFixAgent,
 	})
 }
 
