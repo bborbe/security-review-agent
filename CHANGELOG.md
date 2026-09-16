@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v0.7.0
 
 - fix: bound each Cloud Build / Cloud Storage response body read at 50 MiB and fail with an error naming the limit when it is exceeded, instead of reading an unbounded GCS log object into memory before the excerpt is taken. The size of the log object is not bounded from this side, so the previous `io.ReadAll` was the one place a pathological log could exhaust the pod.
 - fix: resolve the build-fix Cloud Build token from the `GCP_KEY_JSON` service-account key when it is set and fall back to Application Default Credentials only when it is unset — the pod no longer authenticates as the broad node service account. Accepting any credential type present in the env var (`google.CredentialsFromJSON` rather than a type-pinned variant) is a deliberate tradeoff, not an oversight.
