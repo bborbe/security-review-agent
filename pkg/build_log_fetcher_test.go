@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 
 	pkg "github.com/bborbe/security-review-agent/pkg"
 	. "github.com/onsi/ginkgo/v2"
@@ -91,7 +92,9 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 		// this spec off the ADC branch it is asserting on.
 		restoreEnv("GCP_KEY_JSON")
 		_ = os.Unsetenv("GCP_KEY_JSON")
-		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json")
+		Expect(
+			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json"),
+		).NotTo(HaveOccurred())
 		DeferCleanup(func() { _ = os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS") })
 
 		fetcher := pkg.NewCloudBuildLogFetcher()
@@ -104,7 +107,7 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 
 	It("fails on a malformed GCP_KEY_JSON before any HTTP call", func() {
 		restoreEnv("GCP_KEY_JSON")
-		os.Setenv("GCP_KEY_JSON", "not-json")
+		Expect(os.Setenv("GCP_KEY_JSON", "not-json")).NotTo(HaveOccurred())
 		DeferCleanup(func() { _ = os.Unsetenv("GCP_KEY_JSON") })
 
 		buildStub := newAPIStub(http.StatusOK, "unused")
@@ -164,6 +167,49 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(build.authHeader).To(Equal([]string{"Bearer test-token"}))
 			Expect(storage.authHeader).To(Equal([]string{"Bearer test-token"}))
+		})
+	})
+
+	Context("when the log object exceeds the body cap", func() {
+		BeforeEach(func() {
+			build = newAPIStub(
+				http.StatusOK,
+				`{"status":"FAILURE","logsBucket":"gs://test-logs","options":{"logging":"LEGACY"}}`,
+			)
+			DeferCleanup(build.close)
+		})
+
+		// The cap applies to every response body, so it must clear the build
+		// metadata JSON (~79 bytes) or the first hop fails before storage is
+		// ever reached — the boundary under test is the log object's.
+		const bodyCap = 256
+
+		It("errors naming the cap rather than reading the whole object into memory", func() {
+			storage = newAPIStub(http.StatusOK, strings.Repeat("x", bodyCap*2))
+			DeferCleanup(storage.close)
+
+			fetcher := pkg.NewCloudBuildLogFetcherWithCapForTest(
+				build.server.URL, storage.server.URL, staticToken(), bodyCap,
+			)
+
+			log, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).To(HaveOccurred())
+			Expect(log).To(BeEmpty())
+			Expect(err.Error()).To(ContainSubstring("exceeds 256 bytes"))
+		})
+
+		It("accepts a body exactly at the cap", func() {
+			body := strings.Repeat("x", bodyCap)
+			storage = newAPIStub(http.StatusOK, body)
+			DeferCleanup(storage.close)
+
+			fetcher := pkg.NewCloudBuildLogFetcherWithCapForTest(
+				build.server.URL, storage.server.URL, staticToken(), bodyCap,
+			)
+
+			log, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(log).To(Equal(body))
 		})
 	})
 
@@ -294,10 +340,10 @@ var _ = Describe("credentialsFromEnv", func() {
 	It("uses the GCP_KEY_JSON key when it is set", func() {
 		restoreEnv("GCP_KEY_JSON")
 		restoreEnv("GOOGLE_APPLICATION_CREDENTIALS")
-		os.Setenv(
+		Expect(os.Setenv(
 			"GCP_KEY_JSON",
 			`{"type":"authorized_user","client_id":"test-client","refresh_token":"test-refresh"}`,
-		)
+		)).NotTo(HaveOccurred())
 		_ = os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 		tokenSource, err := pkg.CredentialsFromEnvForTest(ctx)
@@ -308,10 +354,12 @@ var _ = Describe("credentialsFromEnv", func() {
 	It("fails on a malformed key instead of silently falling back to ADC", func() {
 		restoreEnv("GCP_KEY_JSON")
 		restoreEnv("GOOGLE_APPLICATION_CREDENTIALS")
-		os.Setenv("GCP_KEY_JSON", "not-json")
+		Expect(os.Setenv("GCP_KEY_JSON", "not-json")).NotTo(HaveOccurred())
 		// This path makes the ADC branch fail with its own distinctive message,
 		// so a silent fallback would be visible in the error text.
-		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json")
+		Expect(
+			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json"),
+		).NotTo(HaveOccurred())
 
 		tokenSource, err := pkg.CredentialsFromEnvForTest(ctx)
 		Expect(err).To(HaveOccurred())
@@ -324,7 +372,9 @@ var _ = Describe("credentialsFromEnv", func() {
 		restoreEnv("GCP_KEY_JSON")
 		restoreEnv("GOOGLE_APPLICATION_CREDENTIALS")
 		_ = os.Unsetenv("GCP_KEY_JSON")
-		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json")
+		Expect(
+			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/adc.json"),
+		).NotTo(HaveOccurred())
 
 		tokenSource, err := pkg.CredentialsFromEnvForTest(ctx)
 		Expect(err).To(HaveOccurred())

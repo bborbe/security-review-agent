@@ -49,6 +49,12 @@ const (
 	// errorBodySnippetLen bounds the response-body snippet embedded in an HTTP
 	// error message.
 	errorBodySnippetLen = 200
+	// maxResponseBodyBytes bounds how much of a response body is read into
+	// memory. A Cloud Build log is normally far smaller, but the size of the
+	// GCS object is unbounded from this side, so a pathological object must
+	// fail loudly rather than exhaust the pod's memory before the caller
+	// truncates it.
+	maxResponseBodyBytes = 50 << 20 // 50 MiB
 )
 
 // cloudBuildScope is the ONLY OAuth scope the Cloud Build API accepts. A
@@ -104,6 +110,10 @@ type cloudBuildLogFetcher struct {
 	storageBaseURL    string
 	tokenSource       oauth2.TokenSource
 	client            *http.Client
+	// maxBodyBytes caps one response body read. A field rather than the const
+	// directly so tests can drive the oversize guard with a few bytes instead
+	// of allocating the production limit.
+	maxBodyBytes int64
 }
 
 // NewCloudBuildLogFetcher returns the production fetcher, authenticating with
@@ -129,6 +139,7 @@ func newCloudBuildLogFetcher(
 		storageBaseURL:    strings.TrimSuffix(storageBaseURL, "/"),
 		tokenSource:       tokenSource,
 		client:            &http.Client{Timeout: cloudBuildHTTPTimeout},
+		maxBodyBytes:      maxResponseBodyBytes,
 	}
 }
 
@@ -271,7 +282,10 @@ func (f *cloudBuildLogFetcher) get(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	// Read one byte past the cap so an oversized body is distinguishable from
+	// an exactly-maximal one, and bound the read so a huge GCS object cannot
+	// exhaust memory before the caller truncates it.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, f.maxBodyBytes+1))
 	if err != nil {
 		return nil, errors.Wrapf(ctx, err, "read response body %s", rawURL)
 	}
@@ -282,6 +296,14 @@ func (f *cloudBuildLogFetcher) get(
 			rawURL,
 			resp.StatusCode,
 			truncate(string(body), errorBodySnippetLen),
+		)
+	}
+	if int64(len(body)) > f.maxBodyBytes {
+		return nil, errors.Errorf(
+			ctx,
+			"GET %s body exceeds %d bytes",
+			rawURL,
+			f.maxBodyBytes,
 		)
 	}
 	return body, nil
