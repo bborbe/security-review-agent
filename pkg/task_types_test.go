@@ -33,3 +33,21 @@ var _ = Describe("TaskTypeSecurityReview", func() {
 		Expect(string(pkg.TaskTypeSecurityReview)).To(Equal("security-review"))
 	})
 })
+
+var _ = Describe("TaskTypeBuildFix", func() {
+	var (
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	It("validates against the agentlib runtime regex ^[a-z0-9-]+$", func() {
+		Expect(pkg.TaskTypeBuildFix.Validate(ctx)).To(Succeed())
+	})
+
+	It("serializes to the exact literal build-fix", func() {
+		Expect(string(pkg.TaskTypeBuildFix)).To(Equal("build-fix"))
+	})
+})

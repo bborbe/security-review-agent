@@ -7,6 +7,8 @@ the findings plus the binary verdict (`approve` / `request-changes`) into the ta
 `## Review` section. It **never posts to GitHub** — the run ends at the vault
 write-back; the verdict is consumed downstream by a human or another agent.
 
+It also consumes `build-fix` tasks (see [Build-fix tasks](#build-fix-tasks)).
+
 Part of the `bborbe` agent-maintenance fleet: the shared library lives in
 [`bborbe/maintainer`](https://github.com/bborbe/maintainer) (imported as
 `github.com/bborbe/maintainer`), the Helm chart ships there too, and the
@@ -24,6 +26,39 @@ former `agent/pr-reviewer` (pr-reviewer lineage).
 5. Parse the JSON verdict (`approve` / `request-changes`) from the review output.
 6. Write the findings + verdict into the task's `## Review` section (vault-first).
    The run ends there — nothing is posted to the PR.
+
+## Build-fix tasks
+
+`task_type: build-fix` — emitted by the google-cloud-build-watcher for every
+failed master build (`assignee: build-fixer-agent`). The agent reads the failed
+build's log over the Cloud Build REST API, extracts the failure cause, and writes
+it into the task's `## Failure Analysis` section, then clears the `assignee` so a
+human picks it up. It routes to `human_review` — never to `done`.
+
+**Analysis only.** The agent never modifies code, never pushes a branch, never
+opens a PR, and never files a second task; it enriches the task it was spawned on
+and stops. There is no Claude runner and no clone on this path.
+
+How the log is fetched:
+
+1. `GET /v1/projects/{project}/locations/{region}/builds/{build_id}` on the Cloud
+   Build REST API, authenticated with an Application Default Credentials bearer
+   token (scope `cloud-platform` — the only scope Cloud Build accepts — plus
+   `devstorage.read_only`). Read-only-ness is enforced by the runtime identity's
+   two IAM grants (`roles/cloudbuild.builds.viewer` and
+   `roles/storage.objectViewer`), never by an editor/owner role.
+2. `GET /storage/v1/b/{logsBucket}/o/log-{build_id}.txt?alt=media` for the log
+   object itself.
+
+The build ID is validated as a UUID before it is interpolated into either URL.
+Logs routed away from a bucket (`CLOUD_LOGGING_ONLY`, `STACKDRIVER_ONLY`,
+`NONE`) are not addressable and fail with an error naming the observed value —
+v1 covers bucket-addressable logs only. A build still `QUEUED`/`WORKING` fails
+with a status-naming error so an unfinished build is distinguishable from a fetch
+failure.
+
+`project` and `region` come from configuration (`CLOUD_BUILD_PROJECT` /
+`CLOUD_BUILD_REGION`), not from the task body.
 
 ## Run modes
 
@@ -48,6 +83,8 @@ Env-driven (Kubernetes) — key variables:
 | `REPO_ALLOWLIST` | Repos the agent may clone (e.g. `github.com/bborbe/*,!github.com/bborbe/go-skeleton`) |
 | `REVIEW_MODE` | Review depth (e.g. `selector`) |
 | `REVIEW_MAX_DURATION` | Soft time budget per Claude phase run (default `25m`, floor `60s`); an overrun routes the phase to `human_review` with a budget-naming message and salvages any streamed partial into the task's `## Salvage` section (never a retry, never posted to GitHub); keep below the K8s Job `ActiveDeadlineSeconds` |
+| `CLOUD_BUILD_PROJECT` | GCP project holding the Cloud Build history read by `build-fix` tasks (default `smedia-brogrammers`) |
+| `CLOUD_BUILD_REGION` | GCP region holding the Cloud Build history read by `build-fix` tasks (default `europe-west3`) |
 
 `REPO_ALLOWLIST` is honored — a PR outside the allowlist is refused, never
 reviewed. Clones are throwaway scratch dirs at the PR head; there is no code

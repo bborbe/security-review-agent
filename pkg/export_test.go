@@ -9,7 +9,27 @@ import (
 	"time"
 
 	agentlib "github.com/bborbe/agent"
+	"golang.org/x/oauth2"
 )
+
+// NewBuildFixStepForTest constructs a buildFixStep with an injected fetcher
+// and excerpt cap so pkg_test can exercise the step without any network call.
+func NewBuildFixStepForTest(
+	fetcher BuildLogFetcher,
+	cloudBuildProject, cloudBuildRegion string,
+	maxLines int,
+) agentlib.Step {
+	return newBuildFixStep(fetcher, cloudBuildProject, cloudBuildRegion, maxLines)
+}
+
+// NewCloudBuildLogFetcherForTest constructs the production fetcher against
+// injected API hosts and a static token, so pkg_test can drive it with httptest.
+func NewCloudBuildLogFetcherForTest(
+	cloudBuildBaseURL, storageBaseURL string,
+	tokenSource oauth2.TokenSource,
+) BuildLogFetcher {
+	return newCloudBuildLogFetcher(cloudBuildBaseURL, storageBaseURL, tokenSource)
+}
 
 // ShouldVerifyPostForTest exposes reviewStep.shouldVerifyPost for unit testing
 // without exposing it to production callers.

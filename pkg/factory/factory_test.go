@@ -315,6 +315,8 @@ var _ = Describe("Factory", func() {
 				nil,
 				currentDateTime,
 				libtime.Duration(25*time.Minute),
+				"smedia-brogrammers",
+				"europe-west3",
 			)
 			Expect(provider).NotTo(BeNil())
 		})
@@ -331,6 +333,12 @@ var _ = Describe("Factory", func() {
 			Expect(agent).NotTo(BeNil())
 		})
 
+		It("returns a non-nil agent for build-fix task type", func() {
+			agent, err := provider.Get(ctx, prpkg.TaskTypeBuildFix)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(agent).NotTo(BeNil())
+		})
+
 		It("refuses the pr-review task type (never run as a plain review)", func() {
 			agent, err := provider.Get(ctx, agentlib.TaskTypePRReview)
 			Expect(err).To(HaveOccurred())
@@ -343,7 +351,7 @@ var _ = Describe("Factory", func() {
 			Expect(agent).To(BeNil())
 		})
 
-		It("returns an error naming the bogus value and both accepted task types", func() {
+		It("returns an error naming the bogus value and every accepted task type", func() {
 			agent, err := provider.Get(ctx, agentlib.TaskType("bogus"))
 			Expect(err).To(HaveOccurred())
 			Expect(agent).To(BeNil())
@@ -351,6 +359,7 @@ var _ = Describe("Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("bogus"))
 			Expect(err.Error()).To(ContainSubstring("security-review"))
 			Expect(err.Error()).To(ContainSubstring("healthcheck"))
+			Expect(err.Error()).To(ContainSubstring("build-fix"))
 		})
 	})
 

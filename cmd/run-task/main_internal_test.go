@@ -38,6 +38,20 @@ var _ = Describe("run-task task type dispatch", func() {
 		Expect(agent).NotTo(BeNil())
 	})
 
+	It("routes a build-fix task to the build-fix agent", func() {
+		app := &application{}
+		agent, err := app.dispatchAgent(
+			ctx,
+			"---\ntask_type: build-fix\nassignee: build-fixer-agent\nbuild_id: 88027472-8599-454f-8112-569739235dad\n---\n# Build Failure\n",
+			nil,
+			"token",
+			"/tmp/repos",
+			"/tmp/work",
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(agent).NotTo(BeNil())
+	})
+
 	It("defaults a task without task_type to the security agent", func() {
 		app := &application{}
 		agent, err := app.dispatchAgent(

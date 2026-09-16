@@ -1,7 +1,12 @@
 ---
-status: approved
+status: completed
+summary: 'Added a build-fix task type that reads the failed Cloud Build log over the Cloud Build REST API with an ADC bearer token, extracts the failure cause into a ## Failure Analysis section, and unassigns the task for a human — analysis only, registered on both entry points.'
+execution_id: security-review-agent-build-fix-exec-015-build-fix-task-type
+dark-factory-version: dev
 created: "2026-09-16T11:43:14Z"
 queued: "2026-09-16T15:06:48Z"
+started: "2026-09-16T15:10:04Z"
+completed: "2026-09-16T15:19:00Z"
 ---
 
 <summary>
