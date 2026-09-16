@@ -68,6 +68,13 @@ type application struct {
 	// operators who lower zombieJobTimeoutSeconds must keep this below it.
 	MaxReviewDuration libtime.Duration `required:"false" arg:"review-max-duration" env:"REVIEW_MAX_DURATION" usage:"Soft time budget per Claude phase run; keep below the K8s Job ActiveDeadlineSeconds / ZombieJobTimeoutSeconds (default 1800s) with headroom for salvage + Kafka delivery; must be >= 60s" default:"25m"`
 
+	// Cloud Build history location for the build-fix task type. The task
+	// frontmatter carries only the build ID; the project and region come from
+	// configuration, mirroring the watcher's own CLOUD_BUILD_PROJECT /
+	// CLOUD_BUILD_REGION.
+	CloudBuildProject string `required:"false" arg:"cloud-build-project" env:"CLOUD_BUILD_PROJECT" usage:"GCP project holding the Cloud Build history (default smedia-brogrammers)" default:"smedia-brogrammers"`
+	CloudBuildRegion  string `required:"false" arg:"cloud-build-region"  env:"CLOUD_BUILD_REGION"  usage:"GCP region holding the Cloud Build history (default europe-west3)"        default:"europe-west3"`
+
 	// Task content from agent pipeline
 	TaskContent string `required:"true" arg:"task-content" env:"TASK_CONTENT" usage:"Raw task markdown from vault"`
 
@@ -265,6 +272,8 @@ func (a *application) dispatchAgent(
 		repoAllowlist,
 		libtime.NewCurrentDateTime(),
 		a.MaxReviewDuration,
+		a.CloudBuildProject,
+		a.CloudBuildRegion,
 	)
 	agent, err := provider.Get(ctx, agentlib.TaskType(a.TaskType))
 	if err != nil {
