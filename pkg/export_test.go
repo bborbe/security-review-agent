@@ -31,6 +31,19 @@ func NewCloudBuildLogFetcherForTest(
 	return newCloudBuildLogFetcher(cloudBuildBaseURL, storageBaseURL, tokenSource)
 }
 
+// NewCloudBuildLogFetcherWithCapForTest constructs the production fetcher with a
+// small response-body cap, so pkg_test can drive the oversize guard with a few
+// bytes instead of allocating the production limit.
+func NewCloudBuildLogFetcherWithCapForTest(
+	cloudBuildBaseURL, storageBaseURL string,
+	tokenSource oauth2.TokenSource,
+	maxBodyBytes int64,
+) BuildLogFetcher {
+	f := newCloudBuildLogFetcher(cloudBuildBaseURL, storageBaseURL, tokenSource)
+	f.maxBodyBytes = maxBodyBytes
+	return f
+}
+
 // CredentialsFromEnvForTest exposes credentialsFromEnv so pkg_test can assert
 // the env-var / ADC branch selection without a real service-account key.
 func CredentialsFromEnvForTest(ctx context.Context) (oauth2.TokenSource, error) {
