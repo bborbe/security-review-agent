@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix: read build-fix Cloud Build logs from the Cloud Logging API (`entries:list`) instead of the build's Google-managed GCS logs bucket — the bucket cannot be read by the agent's service account, so the previous fetch always failed. The build's terminal status is still read from the Cloud Build API first, and the log query carries a `timestamp>=` lower bound because the Logging API otherwise answers with an empty entry list alongside a valid `nextPageToken`, which is indistinguishable from an empty log.
+
 ## v0.7.0
 
 - fix: bound each Cloud Build / Cloud Storage response body read at 50 MiB and fail with an error naming the limit when it is exceeded, instead of reading an unbounded GCS log object into memory before the excerpt is taken. The size of the log object is not bounded from this side, so the previous `io.ReadAll` was the one place a pathological log could exhaust the pod.

@@ -23,24 +23,28 @@ func NewBuildFixStepForTest(
 }
 
 // NewCloudBuildLogFetcherForTest constructs the production fetcher against
-// injected API hosts and a static token, so pkg_test can drive it with httptest.
+// injected API hosts (Cloud Build and Cloud Logging) and a static token, so
+// pkg_test can drive it with httptest.
 func NewCloudBuildLogFetcherForTest(
-	cloudBuildBaseURL, storageBaseURL string,
+	cloudBuildBaseURL, loggingBaseURL string,
 	tokenSource oauth2.TokenSource,
 ) BuildLogFetcher {
-	return newCloudBuildLogFetcher(cloudBuildBaseURL, storageBaseURL, tokenSource)
+	return newCloudBuildLogFetcher(cloudBuildBaseURL, loggingBaseURL, tokenSource)
 }
 
-// NewCloudBuildLogFetcherWithCapForTest constructs the production fetcher with a
-// small response-body cap, so pkg_test can drive the oversize guard with a few
-// bytes instead of allocating the production limit.
-func NewCloudBuildLogFetcherWithCapForTest(
-	cloudBuildBaseURL, storageBaseURL string,
+// NewCloudBuildLogFetcherWithCapsForTest constructs the production fetcher with
+// a small response-body cap and a small page cap, so pkg_test can drive both
+// guards with a few bytes / a couple of pages instead of allocating the
+// production limits.
+func NewCloudBuildLogFetcherWithCapsForTest(
+	cloudBuildBaseURL, loggingBaseURL string,
 	tokenSource oauth2.TokenSource,
 	maxBodyBytes int64,
+	maxLogPages int,
 ) BuildLogFetcher {
-	f := newCloudBuildLogFetcher(cloudBuildBaseURL, storageBaseURL, tokenSource)
+	f := newCloudBuildLogFetcher(cloudBuildBaseURL, loggingBaseURL, tokenSource)
 	f.maxBodyBytes = maxBodyBytes
+	f.maxLogPages = maxLogPages
 	return f
 }
 

@@ -1,6 +1,12 @@
 ---
-status: draft
+status: completed
+summary: Replaced the build-fix log fetch's dead GCS-object hop with the Cloud Logging v2 entries:list API (paged, timestamp-bounded, quota-project header), deleted the bucket-addressability branch, and rewrote the specs and docs around it.
+execution_id: security-review-agent-build-fix-exec-017-build-fix-log-via-cloud-logging
+dark-factory-version: dev
 created: "2026-09-17T08:44:50Z"
+queued: "2026-09-17T10:20:58Z"
+started: "2026-09-17T10:22:05Z"
+completed: "2026-09-17T10:28:55Z"
 ---
 
 # Fetch build-fix logs from the Cloud Logging API instead of the build's GCS logs bucket
