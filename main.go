@@ -93,9 +93,11 @@ type application struct {
 	KafkaBrokers libkafka.Brokers        `required:"false" arg:"kafka-brokers" env:"KAFKA_BROKERS" usage:"Comma separated list of Kafka brokers"`
 	TaskID       agentlib.TaskIdentifier `required:"false" arg:"task-id"       env:"TASK_ID"       usage:"Agent task identifier for publishing results back to task controller"`
 
-	// GitHub App authentication. The pod mints an installation access token at startup
-	// and forwards it to the agent subprocess (gh CLI, git credential helper, repo manager,
-	// and agent provider). App auth is the only supported auth path.
+	// GitHub App authentication. For a task type that acts on a repository
+	// (security-review) the pod mints an installation access token at startup and
+	// forwards it to the agent subprocess (gh CLI, git credential helper, repo
+	// manager, and agent provider); build-fix and healthcheck start without
+	// credentials. App auth is the only supported auth path.
 	AppID          int64  `required:"false" arg:"app-id"          env:"APP_ID"           usage:"GitHub App ID (numeric); required for App auth"`
 	InstallationID int64  `required:"false" arg:"installation-id" env:"INSTALLATION_ID"  usage:"GitHub App Installation ID (numeric)"`
 	PEMKeyFile     string `required:"false" arg:"pem-key-file"    env:"PEM_KEY_FILE"     usage:"Path to the GitHub App private key (PEM file mounted from k8s Secret)"`
@@ -150,7 +152,7 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 	}
 	glog.V(2).Infof("review max duration=%s", a.MaxReviewDuration)
 
-	resolvedToken, err := a.resolveAuth(ctx)
+	resolvedToken, err := a.resolveAuthIfRequired(ctx)
 	if err != nil {
 		jobMetrics.RecordRun(agentlib.AgentStatusFailed)
 		jobMetrics.RecordDuration(time.Since(start))
@@ -229,6 +231,36 @@ func (a *application) dispatchAgent(
 	repoAllowlist []string,
 	resolvedToken string,
 ) (*agentlib.Agent, error) {
+	env := a.agentEnv(resolvedToken)
+	repoManager := git.NewRepoManager(git.WorkdirConfig{
+		ReposPath: a.ReposPath,
+		WorkPath:  a.WorkPath,
+	}, resolvedToken)
+	provider := factory.CreateAgentProvider(
+		a.ClaudeConfigDir,
+		a.AgentDir,
+		a.AnthropicModel,
+		resolvedToken,
+		env,
+		repoManager,
+		a.ReviewMode,
+		repoAllowlist,
+		libtime.NewCurrentDateTime(),
+		a.MaxReviewDuration,
+		a.CloudBuildProject,
+		a.CloudBuildRegion,
+	)
+	agent, err := provider.Get(ctx, agentlib.TaskType(a.TaskType))
+	if err != nil {
+		return nil, errors.Wrap(ctx, err, "select agent for task_type")
+	}
+	return agent, nil
+}
+
+// agentEnv builds the environment forwarded to the agent subprocess. GH_TOKEN
+// is set only when a token was resolved — an absent key, never an empty
+// value — so a task that holds no credential does not advertise one.
+func (a *application) agentEnv(resolvedToken string) map[string]string {
 	env := map[string]string{}
 	if resolvedToken != "" {
 		env["GH_TOKEN"] = resolvedToken
@@ -257,29 +289,40 @@ func (a *application) dispatchAgent(
 	if a.BotLogin != "" {
 		env["BOT_GITHUB_LOGIN"] = a.BotLogin
 	}
-	repoManager := git.NewRepoManager(git.WorkdirConfig{
-		ReposPath: a.ReposPath,
-		WorkPath:  a.WorkPath,
-	}, resolvedToken)
-	provider := factory.CreateAgentProvider(
-		a.ClaudeConfigDir,
-		a.AgentDir,
-		a.AnthropicModel,
-		resolvedToken,
-		env,
-		repoManager,
-		a.ReviewMode,
-		repoAllowlist,
-		libtime.NewCurrentDateTime(),
-		a.MaxReviewDuration,
-		a.CloudBuildProject,
-		a.CloudBuildRegion,
-	)
-	agent, err := provider.Get(ctx, agentlib.TaskType(a.TaskType))
-	if err != nil {
-		return nil, errors.Wrap(ctx, err, "select agent for task_type")
+	return env
+}
+
+// requiresRepositoryAccess reports whether taskType acts on a repository and
+// therefore needs a GitHub App installation token at startup. Only
+// security-review acts on a repository; healthcheck and build-fix run without
+// GitHub credentials. An unset or unknown task type takes the stricter
+// branch — it is treated as repo-acting so it fails loudly at startup instead
+// of silently running without auth.
+func requiresRepositoryAccess(taskType agentlib.TaskType) bool {
+	switch taskType {
+	case prpkg.TaskTypeSecurityReview:
+		return true
+	case agentlib.TaskTypeHealthcheck, prpkg.TaskTypeBuildFix:
+		return false
+	default:
+		return true
 	}
-	return agent, nil
+}
+
+// resolveAuthIfRequired resolves GitHub App credentials only when the
+// configured task type acts on a repository. A non-repo-acting type
+// (healthcheck, build-fix) returns an empty token and a nil error, so the
+// task starts without credentials; an unset or unknown type takes the
+// stricter branch and fails fast inside resolveAuth.
+func (a *application) resolveAuthIfRequired(ctx context.Context) (string, error) {
+	if !requiresRepositoryAccess(agentlib.TaskType(a.TaskType)) {
+		glog.V(2).Infof(
+			"task-type %q does not require repository access — skipping GitHub App auth",
+			a.TaskType,
+		)
+		return "", nil
+	}
+	return a.resolveAuth(ctx)
 }
 
 // resolveAuth mints a GitHub App installation token and returns it. The token
