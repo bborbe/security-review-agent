@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 - fix: resolve GitHub App credentials at startup only for task types that act on a repository (`security-review`) — `build-fix` and `healthcheck` no longer abort with "GitHub App credentials not configured" before their first step; an unset or unknown task type keeps the stricter branch and still fails fast
+- fix: resolve GitHub App credentials in the local task runner (`cmd/run-task`) only after the task file has been read and its `task_type` derived from the frontmatter — the runner has no task-type config field, so it previously resolved credentials before it could know whether the task needed them
 
 ## v0.7.1
 

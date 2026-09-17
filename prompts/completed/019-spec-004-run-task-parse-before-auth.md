@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [004-bug-build-fix-requires-github-app-auth]
+summary: Moved GitHub App credential resolution in cmd/run-task behind a read-then-parse-then-gate ordering (new parseTaskType, requiresRepositoryAccess, prepareTaskAuth), so build-fix and healthcheck start without credentials while security-review still fails fast
+execution_id: security-review-agent-buildfix-auth-exec-019-spec-004-run-task-parse-before-auth
+dark-factory-version: dev
 created: "2026-09-17T19:12:00Z"
 queued: "2026-09-17T19:40:29Z"
+started: "2026-09-17T19:44:58Z"
+completed: "2026-09-17T19:47:11Z"
 branch: dark-factory/bug-build-fix-requires-github-app-auth
 ---
 
