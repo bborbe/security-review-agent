@@ -80,6 +80,11 @@ The binary dispatches on `task_type`, not on the phase name. Three routes exist:
 | `healthcheck` | liveness agent | single Claude step |
 | `build-fix` | single code-only step under `execution` | **no Claude, no clone** |
 
+GitHub App credential resolution at startup is gated on the repo-acting set: only
+`security-review` mints an installation token, while `healthcheck` and `build-fix`
+start with no credentials and no `GH_TOKEN` in the agent environment; an unset or
+unknown `task_type` takes the stricter branch and fails fast.
+
 `build-fix` is the second half of the two-agent build-failure chain: the
 google-cloud-build-watcher files the task (with `build_id`), this agent explains
 why the build broke, and a human fixes it. `pr-review` and `pr-override` are

@@ -98,6 +98,10 @@ Env-driven (Kubernetes) — key variables:
 | `CLOUD_BUILD_REGION` | GCP region holding the Cloud Build history read by `build-fix` tasks (default `europe-west3`) |
 | `GCP_KEY_JSON` | GCP service-account key JSON used to read Cloud Build metadata and log entries for `build-fix` tasks; when unset, Application Default Credentials are used |
 
+`APP_ID` / `INSTALLATION_ID` / `PEM_KEY` are required only for `security-review`
+tasks — `build-fix` and `healthcheck` start without them, and an unset or unknown
+`task_type` takes the stricter branch and still requires them.
+
 `REPO_ALLOWLIST` is honored — a PR outside the allowlist is refused, never
 reviewed. Clones are throwaway scratch dirs at the PR head; there is no code
 path that posts to a PR.
