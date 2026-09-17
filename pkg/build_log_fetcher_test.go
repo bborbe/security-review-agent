@@ -6,6 +6,8 @@ package pkg_test
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,32 +19,79 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// apiStub is a minimal httptest-backed API double: it records every request
-// URI and Authorization header it receives and serves one canned response.
+// apiStub is a minimal httptest-backed API double. It records the method, the
+// request URI, the request body and the Authorization / Content-Type /
+// X-Goog-User-Project headers of every request it receives, and serves a
+// sequence of canned responses — one per request, the last one repeating once
+// the sequence is exhausted — so a multi-page walk can be driven.
 type apiStub struct {
-	server     *httptest.Server
-	status     int
-	body       string
-	requests   []string
-	authHeader []string
+	server      *httptest.Server
+	statuses    []int
+	bodies      []string
+	requests    []string
+	methods     []string
+	requestBody []string
+	authHeader  []string
+	contentType []string
+	quotaHeader []string
 }
 
 func newAPIStub(status int, body string) *apiStub {
-	stub := &apiStub{status: status, body: body}
+	return newAPIStubSequence([]int{status}, []string{body})
+}
+
+func newAPIStubSequence(statuses []int, bodies []string) *apiStub {
+	stub := &apiStub{statuses: statuses, bodies: bodies}
 	stub.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
 		stub.requests = append(stub.requests, r.URL.RequestURI())
+		stub.methods = append(stub.methods, r.Method)
+		stub.requestBody = append(stub.requestBody, string(raw))
 		stub.authHeader = append(stub.authHeader, r.Header.Get("Authorization"))
-		if stub.status != http.StatusOK {
-			w.WriteHeader(stub.status)
+		stub.contentType = append(stub.contentType, r.Header.Get("Content-Type"))
+		stub.quotaHeader = append(stub.quotaHeader, r.Header.Get("X-Goog-User-Project"))
+		status, body := stub.response(len(stub.requests) - 1)
+		if status != http.StatusOK {
+			w.WriteHeader(status)
 		}
-		_, _ = w.Write([]byte(stub.body))
+		_, _ = w.Write([]byte(body))
 	}))
 	return stub
+}
+
+// response returns the canned response for the n-th call, repeating the last
+// entry once the sequence is exhausted.
+func (s *apiStub) response(n int) (int, string) {
+	if n >= len(s.statuses) {
+		n = len(s.statuses) - 1
+	}
+	var body string
+	if n < len(s.bodies) {
+		body = s.bodies[n]
+	}
+	return s.statuses[n], body
 }
 
 func (s *apiStub) close() { s.server.Close() }
 
 func (s *apiStub) count() int { return len(s.requests) }
+
+// query decodes the n-th recorded request body as a Cloud Logging
+// entries:list query.
+func (s *apiStub) query(n int) logEntriesQuery {
+	var query logEntriesQuery
+	Expect(json.Unmarshal([]byte(s.requestBody[n]), &query)).NotTo(HaveOccurred())
+	return query
+}
+
+// logEntriesQuery is the entries:list request body as the specs read it.
+type logEntriesQuery struct {
+	ResourceNames []string `json:"resourceNames"`
+	Filter        string   `json:"filter"`
+	OrderBy       string   `json:"orderBy"`
+	PageSize      int      `json:"pageSize"`
+	PageToken     string   `json:"pageToken"`
+}
 
 // restoreEnv registers a DeferCleanup that puts name back to the value it held
 // when restoreEnv was called — unsetting it when it was absent — so every spec
@@ -61,15 +110,26 @@ func restoreEnv(name string) {
 
 var _ = Describe("cloudBuildLogFetcher", func() {
 	const (
-		buildID = "88027472-8599-454f-8112-569739235dad"
-		project = "smedia-brogrammers"
-		region  = "europe-west3"
+		buildID    = "88027472-8599-454f-8112-569739235dad"
+		project    = "smedia-brogrammers"
+		region     = "europe-west3"
+		startTime  = "2026-09-17T10:00:00Z"
+		createTime = "2026-09-17T09:59:00Z"
+	)
+
+	// The Cloud Build metadata responses the build hop can serve: a finished
+	// build with a start timestamp (the normal case), one that only carries a
+	// createTime, and one that carries neither.
+	const (
+		failedBuild             = `{"status":"FAILURE","startTime":"` + startTime + `"}`
+		failedBuildWithoutStart = `{"status":"FAILURE","createTime":"` + createTime + `"}`
+		failedBuildNoTimestamps = `{"status":"FAILURE"}`
 	)
 
 	var (
 		ctx     context.Context
 		build   *apiStub
-		storage *apiStub
+		logging *apiStub
 	)
 
 	// staticToken mimics the injected-credential path; production resolves ADC.
@@ -111,13 +171,13 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 		DeferCleanup(func() { _ = os.Unsetenv("GCP_KEY_JSON") })
 
 		buildStub := newAPIStub(http.StatusOK, "unused")
-		storageStub := newAPIStub(http.StatusOK, "unused")
+		loggingStub := newAPIStub(http.StatusOK, "unused")
 		DeferCleanup(buildStub.close)
-		DeferCleanup(storageStub.close)
+		DeferCleanup(loggingStub.close)
 
 		// A nil token source is the documented "resolve from the environment" case.
 		fetcher := pkg.NewCloudBuildLogFetcherForTest(
-			buildStub.server.URL, storageStub.server.URL, nil,
+			buildStub.server.URL, loggingStub.server.URL, nil,
 		)
 
 		log, err := fetcher.FetchLog(ctx, ref)
@@ -125,71 +185,274 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 		Expect(err.Error()).To(ContainSubstring("GCP_KEY_JSON"))
 		Expect(log).To(BeEmpty())
 		Expect(buildStub.count()).To(Equal(0))
-		Expect(storageStub.count()).To(Equal(0))
+		Expect(loggingStub.count()).To(Equal(0))
 	})
 
-	Context("when the build is bucket-addressable", func() {
-		const logBody = "Step #0 - \"check-golang\": building\n" +
-			"ERROR: build step 0 \"golang:1.27\" failed: step exited with non-zero status: 2\n"
-
+	Context("when the build has finished", func() {
 		BeforeEach(func() {
-			build = newAPIStub(
+			build = newAPIStub(http.StatusOK, failedBuild)
+			logging = newAPIStub(
 				http.StatusOK,
-				`{"status":"FAILURE","logsBucket":"gs://test-logs","options":{"logging":"LEGACY"}}`,
+				`{"entries":[{"textPayload":"Step #0 - \"check-golang\": building"}]}`,
 			)
-			storage = newAPIStub(http.StatusOK, logBody)
 			DeferCleanup(build.close)
-			DeferCleanup(storage.close)
+			DeferCleanup(logging.close)
 		})
 
-		It("reads the build then the log object and returns the log text", func() {
+		It("reads the build then the log entries and returns the log text", func() {
 			fetcher := pkg.NewCloudBuildLogFetcherForTest(
-				build.server.URL, storage.server.URL, staticToken(),
+				build.server.URL, logging.server.URL, staticToken(),
 			)
 
 			log, err := fetcher.FetchLog(ctx, ref)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(log).To(Equal(logBody))
+			Expect(log).To(Equal(`Step #0 - "check-golang": building`))
 			Expect(build.requests).To(Equal([]string{
 				"/v1/projects/" + project + "/locations/" + region + "/builds/" + buildID,
 			}))
-			Expect(storage.requests).To(Equal([]string{
-				"/storage/v1/b/test-logs/o/log-" + buildID + ".txt?alt=media",
-			}))
+			Expect(logging.requests).To(Equal([]string{"/v2/entries:list"}))
 		})
 
-		It("sends the bearer token on both calls", func() {
+		// The httptest double is the only place the external contract can be
+		// checked without live GCP access, so this asserts the whole request,
+		// not just the returned string.
+		It("sends the full Cloud Logging request shape", func() {
 			fetcher := pkg.NewCloudBuildLogFetcherForTest(
-				build.server.URL, storage.server.URL, staticToken(),
+				build.server.URL, logging.server.URL, staticToken(),
 			)
 
 			_, err := fetcher.FetchLog(ctx, ref)
 			Expect(err).NotTo(HaveOccurred())
+
+			Expect(logging.methods).To(Equal([]string{http.MethodPost}))
+			Expect(logging.authHeader).To(Equal([]string{"Bearer test-token"}))
+			Expect(logging.contentType).To(Equal([]string{"application/json"}))
+			Expect(logging.quotaHeader).To(Equal([]string{project}))
+
+			// The Cloud Build hop is unchanged: GET, bearer token, and no
+			// quota-project header.
+			Expect(build.methods).To(Equal([]string{http.MethodGet}))
 			Expect(build.authHeader).To(Equal([]string{"Bearer test-token"}))
-			Expect(storage.authHeader).To(Equal([]string{"Bearer test-token"}))
+			Expect(build.quotaHeader).To(Equal([]string{""}))
+
+			query := logging.query(0)
+			Expect(query.ResourceNames).To(Equal([]string{"projects/" + project}))
+			Expect(query.OrderBy).To(Equal("timestamp asc"))
+			Expect(query.PageSize).To(Equal(1000))
+			Expect(query.Filter).To(ContainSubstring(`timestamp>="` + startTime + `"`))
+			Expect(query.Filter).To(ContainSubstring(`resource.type="build"`))
+			Expect(query.Filter).To(ContainSubstring(
+				`resource.labels.build_id="` + buildID + `"`,
+			))
+			// pageToken is omitted while empty.
+			Expect(logging.requestBody[0]).NotTo(ContainSubstring("pageToken"))
+		})
+
+		It("uses the build's startTime as the filter's lower bound", func() {
+			fetcher := pkg.NewCloudBuildLogFetcherForTest(
+				build.server.URL, logging.server.URL, staticToken(),
+			)
+
+			_, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(logging.query(0).Filter).To(ContainSubstring(`timestamp>="` + startTime + `"`))
 		})
 	})
 
-	Context("when the log object exceeds the body cap", func() {
+	Context("when the build carries no startTime", func() {
 		BeforeEach(func() {
-			build = newAPIStub(
-				http.StatusOK,
-				`{"status":"FAILURE","logsBucket":"gs://test-logs","options":{"logging":"LEGACY"}}`,
+			build = newAPIStub(http.StatusOK, failedBuildWithoutStart)
+			logging = newAPIStub(http.StatusOK, `{"entries":[{"textPayload":"line"}]}`)
+			DeferCleanup(build.close)
+			DeferCleanup(logging.close)
+		})
+
+		It("falls back to createTime for the filter's lower bound", func() {
+			fetcher := pkg.NewCloudBuildLogFetcherForTest(
+				build.server.URL, logging.server.URL, staticToken(),
 			)
+
+			_, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(logging.query(0).Filter).To(ContainSubstring(
+				`timestamp>="` + createTime + `"`,
+			))
+		})
+	})
+
+	Context("when the build carries neither timestamp", func() {
+		BeforeEach(func() {
+			build = newAPIStub(http.StatusOK, failedBuildNoTimestamps)
+			logging = newAPIStub(http.StatusOK, "unused")
+			DeferCleanup(build.close)
+			DeferCleanup(logging.close)
+		})
+
+		// An unbounded filter is the one shape that silently yields an empty
+		// log, so this must fail rather than fall through to one.
+		It("fails naming the build and issues no logging request", func() {
+			fetcher := pkg.NewCloudBuildLogFetcherForTest(
+				build.server.URL, logging.server.URL, staticToken(),
+			)
+
+			log, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).To(HaveOccurred())
+			Expect(log).To(BeEmpty())
+			Expect(err.Error()).To(ContainSubstring(buildID))
+			Expect(err.Error()).To(ContainSubstring("startTime"))
+			Expect(err.Error()).To(ContainSubstring("createTime"))
+			Expect(logging.count()).To(Equal(0))
+		})
+	})
+
+	Context("when the log spans multiple pages", func() {
+		BeforeEach(func() {
+			build = newAPIStub(http.StatusOK, failedBuild)
+			logging = newAPIStubSequence(
+				[]int{http.StatusOK, http.StatusOK},
+				[]string{
+					`{"entries":[{"textPayload":"page one a"},` +
+						`{"textPayload":"page one b"}],"nextPageToken":"token-1"}`,
+					`{"entries":[{"textPayload":"page two a"}]}`,
+				},
+			)
+			DeferCleanup(build.close)
+			DeferCleanup(logging.close)
+		})
+
+		It("joins both pages in order with no separator at the boundary", func() {
+			fetcher := pkg.NewCloudBuildLogFetcherForTest(
+				build.server.URL, logging.server.URL, staticToken(),
+			)
+
+			log, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(log).To(Equal("page one a\npage one b\npage two a"))
+			Expect(logging.count()).To(Equal(2))
+			Expect(logging.query(0).PageToken).To(BeEmpty())
+			Expect(logging.query(1).PageToken).To(Equal("token-1"))
+		})
+	})
+
+	// The API legitimately returns an empty entries array alongside a valid
+	// nextPageToken while it is still searching. A loop that stops on an empty
+	// page returns an empty log here.
+	Context("when a page is empty but carries a continuation token", func() {
+		BeforeEach(func() {
+			build = newAPIStub(http.StatusOK, failedBuild)
+			logging = newAPIStubSequence(
+				[]int{http.StatusOK, http.StatusOK},
+				[]string{
+					`{"entries":[],"nextPageToken":"token-1"}`,
+					`{"entries":[{"textPayload":"found on the retry"}]}`,
+				},
+			)
+			DeferCleanup(build.close)
+			DeferCleanup(logging.close)
+		})
+
+		It("retries with the token instead of treating the empty page as the end", func() {
+			fetcher := pkg.NewCloudBuildLogFetcherForTest(
+				build.server.URL, logging.server.URL, staticToken(),
+			)
+
+			log, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(log).To(Equal("found on the retry"))
+			Expect(logging.count()).To(Equal(2))
+			Expect(logging.query(1).PageToken).To(Equal("token-1"))
+		})
+	})
+
+	Context("when entries carry structured payloads", func() {
+		BeforeEach(func() {
+			build = newAPIStub(http.StatusOK, failedBuild)
+			logging = newAPIStub(http.StatusOK, `{"entries":[
+				{"textPayload":"plain line"},
+				{"jsonPayload":{"message":"structured line"}},
+				{"jsonPayload":{"other":"no message"}},
+				{"jsonPayload":"not an object"},
+				{"jsonPayload":{"message":42}}]}`)
+			DeferCleanup(build.close)
+			DeferCleanup(logging.close)
+		})
+
+		It("falls back to jsonPayload.message and skips entries with no text", func() {
+			fetcher := pkg.NewCloudBuildLogFetcherForTest(
+				build.server.URL, logging.server.URL, staticToken(),
+			)
+
+			log, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(log).To(Equal("plain line\nstructured line"))
+		})
+	})
+
+	Context("when the logging API fails", func() {
+		BeforeEach(func() {
+			build = newAPIStub(http.StatusOK, failedBuild)
+			logging = newAPIStub(
+				http.StatusForbidden, `{"error":{"message":"permission denied"}}`,
+			)
+			DeferCleanup(build.close)
+			DeferCleanup(logging.close)
+		})
+
+		It("errors naming the status and the URL without re-reading the build", func() {
+			fetcher := pkg.NewCloudBuildLogFetcherForTest(
+				build.server.URL, logging.server.URL, staticToken(),
+			)
+
+			log, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).To(HaveOccurred())
+			Expect(log).To(BeEmpty())
+			Expect(err.Error()).To(ContainSubstring("403"))
+			Expect(err.Error()).To(ContainSubstring("/v2/entries:list"))
+			Expect(build.count()).To(Equal(1))
+		})
+	})
+
+	Context("when the page walk exceeds the page cap", func() {
+		BeforeEach(func() {
+			build = newAPIStub(http.StatusOK, failedBuild)
+			logging = newAPIStub(
+				http.StatusOK,
+				`{"entries":[{"textPayload":"line"}],"nextPageToken":"token"}`,
+			)
+			DeferCleanup(build.close)
+			DeferCleanup(logging.close)
+		})
+
+		It("stops at the cap and returns the accumulated log with an error", func() {
+			fetcher := pkg.NewCloudBuildLogFetcherWithCapsForTest(
+				build.server.URL, logging.server.URL, staticToken(), 1<<20, 2,
+			)
+
+			log, err := fetcher.FetchLog(ctx, ref)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("exceeded 2 pages"))
+			Expect(log).To(Equal("line\nline"))
+			Expect(logging.count()).To(Equal(2))
+		})
+	})
+
+	Context("when the logging response exceeds the body cap", func() {
+		// The cap applies to every response body, so it must clear the build
+		// metadata JSON (~54 bytes) or the first hop fails before logging is
+		// ever reached — the boundary under test is the logging response's.
+		const bodyCap = 256
+
+		BeforeEach(func() {
+			build = newAPIStub(http.StatusOK, failedBuild)
 			DeferCleanup(build.close)
 		})
 
-		// The cap applies to every response body, so it must clear the build
-		// metadata JSON (~79 bytes) or the first hop fails before storage is
-		// ever reached — the boundary under test is the log object's.
-		const bodyCap = 256
+		It("errors naming the cap rather than reading the whole response into memory", func() {
+			logging = newAPIStub(http.StatusOK, strings.Repeat("x", bodyCap*2))
+			DeferCleanup(logging.close)
 
-		It("errors naming the cap rather than reading the whole object into memory", func() {
-			storage = newAPIStub(http.StatusOK, strings.Repeat("x", bodyCap*2))
-			DeferCleanup(storage.close)
-
-			fetcher := pkg.NewCloudBuildLogFetcherWithCapForTest(
-				build.server.URL, storage.server.URL, staticToken(), bodyCap,
+			fetcher := pkg.NewCloudBuildLogFetcherWithCapsForTest(
+				build.server.URL, logging.server.URL, staticToken(), bodyCap, 100,
 			)
 
 			log, err := fetcher.FetchLog(ctx, ref)
@@ -198,123 +461,79 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 			Expect(err.Error()).To(ContainSubstring("exceeds 256 bytes"))
 		})
 
-		It("accepts a body exactly at the cap", func() {
-			body := strings.Repeat("x", bodyCap)
-			storage = newAPIStub(http.StatusOK, body)
-			DeferCleanup(storage.close)
+		It("accepts a response exactly at the cap", func() {
+			prefix := `{"entries":[{"textPayload":"`
+			suffix := `"}]}`
+			payload := strings.Repeat("x", bodyCap-len(prefix)-len(suffix))
+			body := prefix + payload + suffix
+			Expect(body).To(HaveLen(bodyCap))
 
-			fetcher := pkg.NewCloudBuildLogFetcherWithCapForTest(
-				build.server.URL, storage.server.URL, staticToken(), bodyCap,
+			logging = newAPIStub(http.StatusOK, body)
+			DeferCleanup(logging.close)
+
+			fetcher := pkg.NewCloudBuildLogFetcherWithCapsForTest(
+				build.server.URL, logging.server.URL, staticToken(), bodyCap, 100,
 			)
 
 			log, err := fetcher.FetchLog(ctx, ref)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(log).To(Equal(body))
-		})
-	})
-
-	Context("when the build logs are not bucket-addressable", func() {
-		BeforeEach(func() {
-			build = newAPIStub(
-				http.StatusOK,
-				`{"status":"FAILURE","logsBucket":"gs://test-logs","options":{"logging":"CLOUD_LOGGING_ONLY"}}`,
-			)
-			storage = newAPIStub(http.StatusOK, "unused")
-			DeferCleanup(build.close)
-			DeferCleanup(storage.close)
-		})
-
-		It("errors naming the observed logging value and never calls storage", func() {
-			fetcher := pkg.NewCloudBuildLogFetcherForTest(
-				build.server.URL, storage.server.URL, staticToken(),
-			)
-
-			log, err := fetcher.FetchLog(ctx, ref)
-			Expect(err).To(HaveOccurred())
-			Expect(log).To(BeEmpty())
-			Expect(err.Error()).To(ContainSubstring("CLOUD_LOGGING_ONLY"))
-			Expect(err.Error()).To(ContainSubstring(buildID))
-			Expect(storage.count()).To(Equal(0))
+			Expect(log).To(Equal(payload))
 		})
 	})
 
 	Context("when the build has not finished", func() {
 		BeforeEach(func() {
 			build = newAPIStub(
-				http.StatusOK,
-				`{"status":"WORKING","logsBucket":"gs://test-logs","options":{"logging":"LEGACY"}}`,
+				http.StatusOK, `{"status":"WORKING","startTime":"`+startTime+`"}`,
 			)
-			storage = newAPIStub(http.StatusOK, "unused")
+			logging = newAPIStub(http.StatusOK, "unused")
 			DeferCleanup(build.close)
-			DeferCleanup(storage.close)
+			DeferCleanup(logging.close)
 		})
 
-		It("errors naming the non-terminal status", func() {
+		It("errors naming the non-terminal status and never queries the log", func() {
 			fetcher := pkg.NewCloudBuildLogFetcherForTest(
-				build.server.URL, storage.server.URL, staticToken(),
+				build.server.URL, logging.server.URL, staticToken(),
 			)
 
 			_, err := fetcher.FetchLog(ctx, ref)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("WORKING"))
-			Expect(storage.count()).To(Equal(0))
+			Expect(logging.count()).To(Equal(0))
 		})
 	})
 
 	Context("when the build API fails", func() {
 		BeforeEach(func() {
 			build = newAPIStub(http.StatusNotFound, `{"error":{"message":"build not found"}}`)
-			storage = newAPIStub(http.StatusOK, "unused")
+			logging = newAPIStub(http.StatusOK, "unused")
 			DeferCleanup(build.close)
-			DeferCleanup(storage.close)
+			DeferCleanup(logging.close)
 		})
 
 		It("errors naming the HTTP status", func() {
 			fetcher := pkg.NewCloudBuildLogFetcherForTest(
-				build.server.URL, storage.server.URL, staticToken(),
+				build.server.URL, logging.server.URL, staticToken(),
 			)
 
 			_, err := fetcher.FetchLog(ctx, ref)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("404"))
-			Expect(storage.count()).To(Equal(0))
-		})
-	})
-
-	Context("when the storage API fails", func() {
-		BeforeEach(func() {
-			build = newAPIStub(
-				http.StatusOK,
-				`{"status":"FAILURE","logsBucket":"gs://test-logs","options":{"logging":"LEGACY"}}`,
-			)
-			storage = newAPIStub(http.StatusInternalServerError, "backend error")
-			DeferCleanup(build.close)
-			DeferCleanup(storage.close)
-		})
-
-		It("errors naming the HTTP status", func() {
-			fetcher := pkg.NewCloudBuildLogFetcherForTest(
-				build.server.URL, storage.server.URL, staticToken(),
-			)
-
-			_, err := fetcher.FetchLog(ctx, ref)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("500"))
-			Expect(storage.count()).To(Equal(1))
+			Expect(logging.count()).To(Equal(0))
 		})
 	})
 
 	Context("when the build id is not a UUID", func() {
 		BeforeEach(func() {
 			build = newAPIStub(http.StatusOK, "unused")
-			storage = newAPIStub(http.StatusOK, "unused")
+			logging = newAPIStub(http.StatusOK, "unused")
 			DeferCleanup(build.close)
-			DeferCleanup(storage.close)
+			DeferCleanup(logging.close)
 		})
 
 		It("errors before any HTTP call", func() {
 			fetcher := pkg.NewCloudBuildLogFetcherForTest(
-				build.server.URL, storage.server.URL, staticToken(),
+				build.server.URL, logging.server.URL, staticToken(),
 			)
 
 			_, err := fetcher.FetchLog(ctx, pkg.BuildRef{
@@ -323,7 +542,7 @@ var _ = Describe("cloudBuildLogFetcher", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid cloud build id"))
 			Expect(build.count()).To(Equal(0))
-			Expect(storage.count()).To(Equal(0))
+			Expect(logging.count()).To(Equal(0))
 		})
 	})
 })
