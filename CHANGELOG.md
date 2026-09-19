@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix: record the pre-clear owner as `previous_assignee` when the build-fix step unassigns a task — the step clears `assignee` itself, and the result deliverer stamps that field only on its `needs_input` and cap-exhaustion paths, so a `done` build-fix escalation left no record of which agent parked the task for a human
+
 ## v0.7.2
 
 - fix: resolve GitHub App credentials at startup only for task types that act on a repository (`security-review`) — `build-fix` and `healthcheck` no longer abort with "GitHub App credentials not configured" before their first step; an unset or unknown task type keeps the stricter branch and still fails fast

@@ -220,8 +220,14 @@ func (s *buildFixStep) Run(
 		Body:    buildFailureAnalysisBody(buildID, dashboard, cause, partial),
 	})
 	// Clearing assignee IS the escalation: in this fleet `assignee` names which
-	// agent handles the task, so an empty value hands it to a human. The
-	// framework records the pre-clear owner as previous_assignee on its own write.
+	// agent handles the task, so an empty value hands it to a human. Record the
+	// pre-clear owner here. The framework stamps previous_assignee only on its
+	// own needs_input and cap-exhaustion clears (delivery/result-deliverer.go);
+	// a `done` result is not one of those paths, and because this code clears
+	// the field itself, nothing downstream is left holding the owner.
+	if prev, ok := md.Frontmatter.String("assignee"); ok && prev != "" {
+		md.Frontmatter["previous_assignee"] = prev
+	}
 	md.Frontmatter["assignee"] = ""
 
 	glog.V(2).Infof("build-fix: enriched task build_id=%s partial=%t", buildID, partial)

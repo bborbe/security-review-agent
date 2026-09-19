@@ -163,6 +163,23 @@ var _ = Describe("buildFixStep", func() {
 			Expect(reparsed.Frontmatter.Assignee()).To(BeEmpty())
 		})
 
+		It("records the pre-clear owner as previous_assignee when it unassigns", func() {
+			fetcher.FetchLogReturns(fatalBuildLog, nil)
+			md, err := agentlib.ParseMarkdown(ctx, fixture)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(md.Frontmatter.Assignee()).To(Equal(agentlib.TaskAssignee("build-fixer-agent")))
+
+			_, err = step.Run(ctx, md)
+			Expect(err).NotTo(HaveOccurred())
+
+			marshaled, err := md.Marshal(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			reparsed, err := agentlib.ParseMarkdown(ctx, marshaled)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(reparsed.Frontmatter.Assignee()).To(BeEmpty())
+			Expect(reparsed.Frontmatter["previous_assignee"]).To(Equal("build-fixer-agent"))
+		})
+
 		It("keeps exactly one ## Failure Analysis section across repeated runs", func() {
 			fetcher.FetchLogReturns(fatalBuildLog, nil)
 			md, err := agentlib.ParseMarkdown(ctx, fixture)
