@@ -78,8 +78,10 @@ type application struct {
 	// Task file for local development
 	TaskFilePath string `required:"true" arg:"task-file" env:"TASK_FILE" usage:"Path to the markdown task file"`
 
-	// GitHub App authentication. The pod mints an installation access token at startup
-	// and forwards it to the agent subprocess. App auth is the only supported auth path.
+	// GitHub App authentication. For a task type that acts on a repository
+	// (security-review) the runner mints an installation access token at startup and
+	// forwards it to the agent subprocess; build-fix and healthcheck start without
+	// credentials. App auth is the only supported auth path.
 	AppID          int64  `required:"false" arg:"app-id"          env:"APP_ID"           usage:"GitHub App ID (numeric); required for App auth"`
 	InstallationID int64  `required:"false" arg:"installation-id" env:"INSTALLATION_ID"  usage:"GitHub App Installation ID (numeric)"`
 	PEMKeyFile     string `required:"false" arg:"pem-key-file"    env:"PEM_KEY_FILE"     usage:"Path to the GitHub App private key (PEM file mounted from k8s Secret)"`
@@ -127,13 +129,6 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 	}
 	glog.V(2).Infof("repo-allowlist count=%d", len(repoAllowlist))
 
-	taskContent, err := os.ReadFile(
-		a.TaskFilePath,
-	) // #nosec G304 -- filePath from trusted CLI input
-	if err != nil {
-		return errors.Wrapf(ctx, err, "read task file: %s", a.TaskFilePath)
-	}
-
 	reposPath, workPath, err := a.resolveCachePaths(ctx)
 	if err != nil {
 		return err
@@ -141,24 +136,20 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 
 	deliverer := factory.CreateFileResultDeliverer(a.TaskFilePath)
 
-	resolvedToken, err := a.resolveAuth(ctx)
+	// Read → parse the task type → resolve credentials → dispatch. The parse must
+	// precede credential resolution: this binary has no TaskType config field, so
+	// the type is only known once the task content has been parsed.
+	taskContent, resolvedToken, agent, err := a.prepareTaskAuth(
+		ctx,
+		repoAllowlist,
+		reposPath,
+		workPath,
+	)
 	if err != nil {
 		return err
 	}
 	if a.SkipPost {
 		glog.V(2).Infof("security-reviewer skip-post enabled — GitHub writes suppressed")
-	}
-
-	agent, err := a.dispatchAgent(
-		ctx,
-		string(taskContent),
-		repoAllowlist,
-		resolvedToken,
-		reposPath,
-		workPath,
-	)
-	if err != nil {
-		return errors.Wrap(ctx, err, "task type dispatch")
 	}
 
 	authSetup := githubauth.NewNoopAuthSetup()
@@ -180,7 +171,7 @@ func (a *application) Run(ctx context.Context, _ libsentry.Client) error {
 		RepoAllowlist:               repoAllowlist,
 		AuthSetup:                   authSetup,
 		Phase:                       a.Phase,
-		TaskContent:                 string(taskContent),
+		TaskContent:                 taskContent,
 		Deliverer:                   deliverer,
 		Agent:                       agent,
 		BotLogin:                    a.BotLogin,
@@ -205,13 +196,9 @@ func (a *application) dispatchAgent(
 	reposPath string,
 	workPath string,
 ) (*agentlib.Agent, error) {
-	md, err := agentlib.ParseMarkdown(ctx, taskContent)
+	taskType, err := parseTaskType(ctx, taskContent)
 	if err != nil {
-		return nil, errors.Wrapf(ctx, err, "parse task content")
-	}
-	taskType := md.Frontmatter.TaskType()
-	if taskType == "" {
-		taskType = prpkg.TaskTypeSecurityReview
+		return nil, err
 	}
 	env := map[string]string{}
 	if resolvedToken != "" {
@@ -260,6 +247,90 @@ func (a *application) dispatchAgent(
 		a.CloudBuildRegion,
 	)
 	return provider.Get(ctx, taskType)
+}
+
+// parseTaskType derives the task type from the task's frontmatter. A missing
+// task_type defaults to the security-review route — this binary is the
+// security agent.
+func parseTaskType(ctx context.Context, taskContent string) (agentlib.TaskType, error) {
+	md, err := agentlib.ParseMarkdown(ctx, taskContent)
+	if err != nil {
+		return "", errors.Wrapf(ctx, err, "parse task content")
+	}
+	taskType := md.Frontmatter.TaskType()
+	if taskType == "" {
+		taskType = prpkg.TaskTypeSecurityReview
+	}
+	return taskType, nil
+}
+
+// requiresRepositoryAccess reports whether taskType acts on a repository and
+// therefore needs a GitHub App installation token at startup. Only
+// security-review acts on a repository; healthcheck and build-fix run without
+// GitHub credentials. An unset or unknown task type takes the stricter
+// branch — it is treated as repo-acting so it fails loudly at startup instead
+// of silently running without auth.
+func requiresRepositoryAccess(taskType agentlib.TaskType) bool {
+	switch taskType {
+	case prpkg.TaskTypeSecurityReview:
+		return true
+	case agentlib.TaskTypeHealthcheck, prpkg.TaskTypeBuildFix:
+		return false
+	default:
+		return true
+	}
+}
+
+// prepareTaskAuth reads the task file, derives the task type from its
+// frontmatter, resolves GitHub App credentials only when that type acts on a
+// repository, and dispatches the matching agent.
+//
+// The order is load-bearing: this binary has no TaskType config field, so the
+// task type is unknown until the task content has been parsed. Resolving
+// credentials before that parse is the defect this method exists to prevent.
+//
+// Returns the raw task content, the resolved installation token (empty for a
+// non-repo-acting type) and the dispatched agent.
+func (a *application) prepareTaskAuth(
+	ctx context.Context,
+	repoAllowlist []string,
+	reposPath string,
+	workPath string,
+) (string, string, *agentlib.Agent, error) {
+	taskContent, err := os.ReadFile(
+		a.TaskFilePath,
+	) // #nosec G304 -- filePath from trusted CLI input
+	if err != nil {
+		return "", "", nil, errors.Wrapf(ctx, err, "read task file: %s", a.TaskFilePath)
+	}
+	taskType, err := parseTaskType(ctx, string(taskContent))
+	if err != nil {
+		return "", "", nil, err
+	}
+	var resolvedToken string
+	if requiresRepositoryAccess(taskType) {
+		resolvedToken, err = a.resolveAuth(ctx)
+		if err != nil {
+			return "", "", nil, err
+		}
+	} else {
+		glog.V(2).Infof(
+			"task-type %q does not require repository access — skipping GitHub App auth",
+			taskType,
+		)
+	}
+	agent, err := a.dispatchAgent(
+		ctx,
+		string(taskContent),
+		repoAllowlist,
+		resolvedToken,
+		reposPath,
+		workPath,
+	)
+	if err != nil {
+		return "", "", nil, errors.Wrap(ctx, err, "task type dispatch")
+	}
+	return string(taskContent), resolvedToken, agent, nil
 }
 
 // resolveAuth mints a GitHub App installation token and returns it. The token
