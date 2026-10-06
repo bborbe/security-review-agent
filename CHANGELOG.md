@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- docs: Remove the dark-factory approval gate from this repo's `CLAUDE.md`. It contradicted the global `execution-phase-no-reask` carve-out and would have stopped every spec and prompt approval.
+
 ## v0.7.4
 
 - chore: bump `github.com/bborbe/agent` v0.87.1 → v0.89.4, which makes `Agent.unsupportedPhase` report `needs_input` instead of `failed` when a task's phase is not one the agent registers. The two statuses carry opposite retry semantics: `failed` means transient infra, so the deliverer preserved the assignee and the controller kept re-driving a task this lane could never run; `needs_input` means task-wrong, so the assignee is cleared and the task surfaces in the operator inbox. Nothing else bounded the retry for a task carrying neither `ref` nor `max_triggers`, so a rejected phase re-drove every ~60s indefinitely — the build-fix lane rejected `planning` for hours on 2026-09-24 (132 jobs) until its Config stopped dispatching that phase. The message string is unchanged, so log greps and dashboards keyed on `unsupported entry phase` keep working. Transitive bumps come with it: `errors` 1.6.1, `kafka` 1.25.16, `vault-cli` 0.126.3, `parse` 1.11.4.
