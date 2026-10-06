@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 - docs: Remove the dark-factory approval gate from this repo's `CLAUDE.md`. It contradicted the global `execution-phase-no-reask` carve-out and would have stopped every spec and prompt approval.
+- docs: Name the daemon and inline what the global rule grants in the `CLAUDE.md` dark-factory bullet, so the replacement for the removed approval gate is resolvable from inside the repo.
 
 ## v0.7.4
 
