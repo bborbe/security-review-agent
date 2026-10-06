@@ -61,7 +61,7 @@ The headline reason to use prompts/specs: **safe unattended execution** inside a
 - Never manually edit frontmatter status — use the CLI commands above
 - Always audit before approving; always `/dark-factory:verify-spec <id>` before completing
 - **Spec-linked prompts are daemon-generated** — after `spec approve`, wait for the `dark-factory-gen-<spec>` container; never hand-write prompts for an approved spec
-- Run `dark-factory prompt approve` / `dark-factory spec approve` yourself once the prompt/spec passed its auditor (global rule execution-phase-no-reask)
+- Run `dark-factory prompt approve` / `dark-factory spec approve` yourself once the prompt/spec passed its auditor, and the daemon under the daemon-hygiene rule (`dark-factory status` first; background; log outside the repo; kill when idle). Global rule: `execution-phase-no-reask`.
 - **Before starting the daemon** — run `dark-factory status` first; the daemon does not exit when the queue drains, so kill it once `Queue: 0`
 
 ## Development Standards
