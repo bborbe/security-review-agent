@@ -127,8 +127,11 @@ func resolvePEM(pemKey, pemKeyFile string) ([]byte, error) {
 		return []byte(pemKey), nil
 	}
 	// pemKeyFile is the explicit -pem-key-file CLI flag value (operator input);
-	// filepath.Clean breaks gosec G703/G304 taint analysis. The tool's stated
-	// purpose is to read an operator-specified PEM file.
+	// reading an operator-named PEM is this tool's stated purpose, so the path is
+	// trusted by design. filepath.Clean satisfies gosec G304, but golangci-lint
+	// v2.14.0's stricter G703 taint analysis no longer accepts it as a sanitizer
+	// — dispositioned here rather than by narrowing the rule set repo-wide.
+	//nolint:gosec // G703: operator-supplied path by design; no lower-privilege input to validate against.
 	return os.ReadFile(filepath.Clean(pemKeyFile))
 }
 
