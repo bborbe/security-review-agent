@@ -1,6 +1,6 @@
 module github.com/bborbe/security-review-agent
 
-go 1.27.1
+go 1.27.2
 
 replace (
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v1.2.0
