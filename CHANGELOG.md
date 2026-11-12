@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v0.7.9
 
 - chore: update Go to 1.27.4 and github.com/bborbe/agent to v0.141.0, github.com/bborbe/argument/v2 to v2.13.11, github.com/bborbe/cqrs to v0.6.16, github.com/bborbe/kafka to v1.29.14, github.com/bborbe/maintainer to v0.51.2, github.com/bborbe/service to v1.11.3, github.com/bborbe/time to v1.27.28, github.com/bborbe/vault-cli to v0.192.2, golang.org/x/oauth2 to v0.38.0
 
