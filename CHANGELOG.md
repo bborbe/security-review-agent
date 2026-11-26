@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- chore: update github.com/bborbe/agent to v0.148.3, github.com/bborbe/argument/v2 to v2.13.13, github.com/bborbe/cqrs to v0.6.17, github.com/bborbe/errors to v1.7.1, github.com/bborbe/kafka to v1.30.3, github.com/bborbe/maintainer to v0.52.1, github.com/bborbe/sentry to v1.11.1, github.com/bborbe/service to v1.12.2, github.com/bborbe/time to v1.27.29, github.com/bborbe/vault-cli to v0.200.6
+
 ## v0.7.11
 
 - chore: remove orphaned section comments left in `.trivyignore` by the stale-ignore sweep
